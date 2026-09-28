@@ -43,6 +43,17 @@ import {
 import { seedIfEmpty } from "@/lib/seed";
 import { randomUUID, createHmac } from "node:crypto";
 
+// Drizzle attaches the raw SQL of a failed statement to its errors.
+// Customer-facing flows must never surface that to the shopper.
+const DATABASE_ERROR_PATTERN =
+  /failed query|duplicate key value|violates .*constraint|syntax error|relation .* does not exist/i;
+
+function toCustomerFacingError(error: unknown, fallback: string): string {
+  if (!(error instanceof Error) || !error.message) return fallback;
+  if (DATABASE_ERROR_PATTERN.test(error.message)) return fallback;
+  return error.message;
+}
+
 // ---------------------------------------------------------
 // Ensure seed runs on first request (cheap check)
 // ---------------------------------------------------------
@@ -1597,18 +1608,30 @@ export async function createOrder(data: {
     const orderId = randomUUID();
 
     await db.transaction(async (tx) => {
-      const consumerId = session?.id ?? randomUUID();
+      const consumerName = data.consumerName.trim();
+      const consumerAddress = data.deliveryAddress.trim();
+
+      // Phone is the stable identity for guest checkout, and consumers.phone is UNIQUE.
+      // A returning shopper must reuse their existing row; inserting a fresh id would
+      // collide on the phone constraint and roll back the whole order.
+      const [existingConsumer] = await tx
+        .select({ id: consumers.id })
+        .from(consumers)
+        .where(eq(consumers.phone, deliveryPhone))
+        .limit(1);
+      const consumerId = existingConsumer?.id ?? session?.id ?? randomUUID();
+
       await tx.insert(consumers).values({
         id: consumerId,
-        name: data.consumerName.trim(),
+        name: consumerName,
         phone: deliveryPhone,
-        defaultAddress: data.deliveryAddress.trim(),
+        defaultAddress: consumerAddress,
       }).onConflictDoUpdate({
         target: consumers.id,
         set: {
-          name: data.consumerName.trim(),
+          name: consumerName,
           phone: deliveryPhone,
-          defaultAddress: data.deliveryAddress.trim(),
+          defaultAddress: consumerAddress,
         },
       });
 
@@ -1710,7 +1733,10 @@ export async function createOrder(data: {
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Failed to place order.",
+      error: toCustomerFacingError(
+        error,
+        "We could not place your order. Check your delivery details and try again."
+      ),
     };
   }
 }
