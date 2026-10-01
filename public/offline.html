@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#14532d">
+    <title>You're offline | OmniShelf</title>
+    <style>
+      body { align-items: center; background: #f5f8f3; color: #0f172a; display: flex; font: 16px/1.6 system-ui, sans-serif; justify-content: center; margin: 0; min-height: 100vh; padding: 24px; }
+      main { background: white; border: 1px solid #e2e8f0; border-radius: 24px; max-width: 440px; padding: 36px; text-align: center; }
+      img { height: 64px; width: 64px; }
+      h1 { font-size: 1.75rem; line-height: 1.2; margin: 20px 0 8px; }
+      p { color: #475569; margin: 0; }
+      button { background: #14532d; border: 0; border-radius: 12px; color: white; cursor: pointer; font: inherit; font-weight: 700; margin-top: 24px; padding: 12px 20px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="/icon.svg" alt="">
+      <h1>You're offline</h1>
+      <p>Connect to the internet and try again. Your store data is not saved on this device for offline access.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+  </body>
+</html>

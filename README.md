@@ -15,7 +15,7 @@ A unified platform for Kirana grocers and Medical pharmacies — unifying the **
 - **Support Ticket Queue** — priority + status flow (open → in_progress → resolved)
 - **Vendor Scorecards** — fulfillment / accuracy / compliance / response + Gold/Silver/Bronze badges
 - **Immutable Audit Log** — every KYC toggle, stock mutation, login
-- **Vendor Onboarding Wizard** — 4-step guided registration
+- **Vendor Onboarding Wizard** — 3-step guided registration
 
 ### 🏪 Vendor Console (Kirana + Medical)
 - **RBAC roles** — Owner (full) vs Clerk (scan/billing only)
@@ -85,6 +85,18 @@ createdb app_db
 npm run db:push
 npm run dev
 ```
+
+## 📲 Install and sign up
+
+OmniShelf includes a web app manifest, install icons, and a service worker. In a
+supported browser, open the app over HTTPS (or `localhost`) and use the browser's
+install option; browsers that expose an install prompt also show an **Install app**
+button in the top navigation. When offline, the app displays a reconnect screen
+instead of caching private store pages or API responses.
+
+Use **Sign up** or visit `/onboarding` to register a grocery or pharmacy store.
+New registrations are marked pending until KYC review. Existing account holders
+should sign in before linking a store to their account.
 
 For an existing PostgreSQL database, set its connection string in `.env.local`. Local development seeds demo records on the login page.
 

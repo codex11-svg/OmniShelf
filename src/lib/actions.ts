@@ -1404,6 +1404,21 @@ export async function createMerchant(data: {
 }) {
   const session = await getSession();
   const phone = data.phone.trim().replace(/\s/g, "");
+  const requiredValues = [
+    data.storeName,
+    data.ownerName,
+    data.address,
+    data.city,
+    data.pincode,
+    phone,
+  ];
+  if (
+    requiredValues.some((value) => !value.trim()) ||
+    !/^\+?[0-9-]{9,18}$/.test(phone) ||
+    !["KIRANA", "MEDICAL"].includes(data.storeType)
+  ) {
+    return { ok: false, error: "Complete all required fields and enter a valid phone number." };
+  }
 
   // Check if phone is already linked to an existing merchant
   const [existingUser] = await db
@@ -1414,6 +1429,9 @@ export async function createMerchant(data: {
 
   if (existingUser?.merchantId) {
     return { ok: false, error: "A store is already registered with this phone number." };
+  }
+  if (existingUser && (session?.id !== existingUser.id || session.role !== "VENDOR_OWNER")) {
+    return { ok: false, error: "This phone already belongs to an account. Sign in before registering a store." };
   }
 
   const merchantId = randomUUID();
