@@ -1,25 +1,13 @@
 import { cookies } from "next/headers";
 import { db } from "@/db";
-import { users, merchants, otpSessions } from "@/db/schema";
-import { eq, and, gt } from "drizzle-orm";
-import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
+import { users, merchants } from "@/db/schema";
+import { eq } from "drizzle-orm";
+import { createHmac } from "node:crypto";
+import { decodeSessionToken, type SessionUser } from "@/lib/session-token";
 
-const SESSION_SECRET = process.env.SESSION_SECRET ??
-  (process.env.NODE_ENV === "production" ? "" : "dev-secret-change-me-in-prod");
+const SESSION_SECRET = process.env.SESSION_SECRET ?? (process.env.NODE_ENV === "production" ? "" : "dev-secret-change-me-in-prod");
 const SESSION_COOKIE = "omnishelf_session";
-
-export type SessionUser = {
-  id: string;
-  name: string;
-  phone: string | null; // Now optional (users can sign up with email)
-  email?: string | null; // Email for email signups
-  role: "ADMIN" | "VENDOR_OWNER" | "VENDOR_CLERK";
-  merchantId: string | null;
-  accessLevel: "SCAN_ONLY" | "BILLING" | "FULL" | null;
-  merchantName?: string | null;
-  merchantType?: "KIRANA" | "MEDICAL" | null;
-  merchantKycStatus?: string | null;
-};
+export type { SessionUser } from "@/lib/session-token";
 
 function sign(payload: string): string {
   if (!SESSION_SECRET || (process.env.NODE_ENV === "production" && SESSION_SECRET.length < 32)) {
@@ -36,18 +24,7 @@ export function encodeSession(user: SessionUser): string {
 }
 
 export function decodeSession(token: string): SessionUser | null {
-  const [payload, signature] = token.split(".");
-  if (!payload || !signature) return null;
-  const expectedSignature = Buffer.from(sign(payload), "hex");
-  const receivedSignature = Buffer.from(signature, "hex");
-  if (expectedSignature.length !== receivedSignature.length || !timingSafeEqual(expectedSignature, receivedSignature)) return null;
-  try {
-    return JSON.parse(
-      Buffer.from(payload, "base64url").toString("utf-8")
-    ) as SessionUser;
-  } catch {
-    return null;
-  }
+  return decodeSessionToken(token, SESSION_SECRET, process.env.NODE_ENV === "production");
 }
 
 export async function getSession(): Promise<SessionUser | null> {
@@ -79,52 +56,7 @@ export async function clearSession() {
   cookieStore.delete(SESSION_COOKIE);
 }
 
-export function generateOtp(): string {
-  return randomInt(100000, 999999).toString();
-}
-
-export async function createOtpSession(phone: string, channel: "WHATSAPP" | "SMS" = "WHATSAPP") {
-  const otp = generateOtp();
-  const id = randomBytes(12).toString("hex");
-  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-  await db.insert(otpSessions).values({
-    id,
-    phone,
-    otp,
-    channel,
-    verified: false,
-    expiresAt,
-  });
-  // In production this would POST to WhatsApp Business API.
-  // For demo, the OTP is returned to the UI so the reviewer can enter it.
-  return { sessionId: id, otp };
-}
-
-export async function verifyOtp(phone: string, otp: string): Promise<boolean> {
-  const now = new Date();
-  const rows = await db
-    .select()
-    .from(otpSessions)
-    .where(
-      and(
-        eq(otpSessions.phone, phone),
-        eq(otpSessions.otp, otp),
-        eq(otpSessions.verified, false),
-        gt(otpSessions.expiresAt, now)
-      )
-    )
-    .limit(1);
-  if (rows.length === 0) return false;
-  await db
-    .update(otpSessions)
-    .set({ verified: true })
-    .where(eq(otpSessions.id, rows[0].id));
-  return true;
-}
-
-export async function getUserByPhone(phone: string) {
-  const [user] = await db.select().from(users).where(eq(users.phone, phone)).limit(1);
-  if (!user) return null;
+export async function getUserWithSession(user: typeof users.$inferSelect) {
   let merchant: typeof merchants.$inferSelect | null = null;
   if (user.merchantId) {
     const [m] = await db
@@ -149,6 +81,24 @@ export async function getUserByPhone(phone: string) {
       merchantKycStatus: merchant?.kycStatus ?? null,
     } satisfies SessionUser,
   };
+}
+
+export async function getUserByPhone(phone: string) {
+  const [user] = await db.select().from(users).where(eq(users.phone, phone)).limit(1);
+  if (!user) return null;
+  return getUserWithSession(user);
+}
+
+export async function getUserByEmail(email: string) {
+  const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim())).limit(1);
+  if (!user) return null;
+  return getUserWithSession(user);
+}
+
+export async function getUserById(id: string) {
+  const [user] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  if (!user) return null;
+  return getUserWithSession(user);
 }
 
 export function requireRole(session: SessionUser | null, roles: SessionUser["role"][]) {

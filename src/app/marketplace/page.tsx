@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { listMarketplace, listMarketplaceCities } from "@/lib/actions";
 import { getSession } from "@/lib/auth";
@@ -13,60 +12,55 @@ export default async function MarketplacePage({
 }) {
   const sp = await searchParams;
   const city = sp.city ?? null;
-  const [items, cities] = await Promise.all([listMarketplace(city), listMarketplaceCities()]);
+  const sort = ["expiry", "discount", "price-asc", "price-desc"].includes(sp.sort ?? "")
+    ? sp.sort as "expiry" | "discount" | "price-asc" | "price-desc"
+    : "expiry";
+  const [items, cities] = await Promise.all([listMarketplace(), listMarketplaceCities()]);
   const session = await getSession();
 
   // Collect unique categories
   const categories = Array.from(new Set(items.map((i) => i.category).filter(Boolean))) as string[];
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="page-enter mx-auto max-w-7xl px-4 py-8">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <div className="mb-1 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-100 to-rose-100 px-3 py-1 text-xs font-bold uppercase tracking-widest text-rose-700">
-            🏷️ Public B2C Clearance Marketplace
+          <div className="mb-2 text-xs font-semibold uppercase text-emerald-800">
+            Verified neighborhood stores
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">Near-expiry deals from verified stores</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Every listing here is pushed by a KYC-verified Kirana or pharmacy and filtered by
-            platform-enforced compliance rules (Schedule H/X drugs are <b>auto-blocked</b>).
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Shop local clearance</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+            Find reduced-price grocery and pharmacy products nearby. Batch and expiry details are shown on every listing.
           </p>
         </div>
       </div>
 
       {session?.role === "VENDOR_OWNER" && (
-        <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
           <span>
             You&apos;re signed in as <b>{session.merchantName}</b>. Manage your own clearance listings
             from your vendor console.
           </span>
-          <Link href="/vendor" className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700">
-            Go to console →
+          <Link href="/vendor" className="rounded-md bg-emerald-800 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-900">
+            Manage listings
           </Link>
         </div>
       )}
 
-      <MarketplaceClient items={items} cities={cities} categories={categories} initialCity={city} />
+      <MarketplaceClient
+        items={items}
+        cities={cities}
+        categories={categories}
+        initialCity={city}
+        initialSearch={sp.q ?? ""}
+        initialCategory={sp.category ?? ""}
+        initialSort={sort}
+      />
 
-      <div className="mt-10 grid gap-4 md:grid-cols-3">
-        <div className="card p-5">
-          <div className="text-xs font-bold uppercase tracking-widest text-emerald-600">Compliance</div>
-          <div className="mt-1 text-sm text-slate-700">
-            Schedule H and Schedule X drugs are hard-blocked from the marketplace by admin switches — even if a vendor tries to push them.
-          </div>
-        </div>
-        <div className="card p-5">
-          <div className="text-xs font-bold uppercase tracking-widest text-rose-600">Expiry honesty</div>
-          <div className="mt-1 text-sm text-slate-700">
-            Every card shows the exact batch number and expiry date so customers can buy with full transparency.
-          </div>
-        </div>
-        <div className="card p-5">
-          <div className="text-xs font-bold uppercase tracking-widest text-indigo-600">Verified stores</div>
-          <div className="mt-1 text-sm text-slate-700">
-            Only stores that passed KYC + license verification can push items — you&apos;ll see ✅ on every listing.
-          </div>
-        </div>
+      <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-slate-200 py-4 text-xs text-slate-600">
+        <span>Verified stores</span>
+        <span>Batch and expiry shown on every listing</span>
+        <span>Prescription medicines excluded from online orders</span>
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CheckCircle2, Minus, Plus, ShoppingCart, Trash2 } from "lucide-react";
 import { createOrder } from "@/lib/actions";
 
 type CartItem = {
@@ -82,10 +83,10 @@ export function ConsumerCart({
 
   if (items.length === 0) {
     return (
-      <div className="card p-8 text-center">
+      <div className="py-10 text-center">
         {success ? (
           <>
-            <div className="text-5xl">✅</div>
+            <CheckCircle2 aria-hidden="true" size={28} className="mx-auto text-emerald-800" />
             <p className="mt-3 text-sm font-semibold text-emerald-700">{success}</p>
             <button onClick={() => setSuccess(null)} className="mt-4 text-sm font-semibold text-slate-700 underline">
               Continue shopping
@@ -93,7 +94,7 @@ export function ConsumerCart({
           </>
         ) : (
           <>
-            <div className="text-5xl">🛒</div>
+            <ShoppingCart aria-hidden="true" size={28} className="mx-auto text-slate-400" />
             <p className="mt-3 text-sm text-slate-500">Your cart is empty</p>
           </>
         )}
@@ -102,28 +103,30 @@ export function ConsumerCart({
   }
 
   return (
-    <div className="card p-5">
+    <div className="space-y-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-900">🛒 Your Cart</h2>
+        <h2 className="flex items-center gap-2 text-base font-bold text-slate-900">
+          <ShoppingCart aria-hidden="true" size={18} /> Your cart
+        </h2>
         <button
           onClick={onClear}
-          className="text-xs font-semibold text-rose-600 hover:text-rose-700"
+          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900"
         >
-          Clear all
+          <Trash2 aria-hidden="true" size={14} /> Clear cart
         </button>
       </div>
 
       {success && (
-        <div role="status" className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+        <div role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
           {success} Other store items remain in your cart.
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="divide-y divide-slate-200 border-y border-slate-200">
         {items.map((item) => (
           <div
             key={item.productId}
-            className="flex items-center justify-between rounded-lg bg-slate-50 p-2"
+            className="flex items-center justify-between gap-3 py-3"
           >
             <div className="flex-1">
               <div className="text-sm font-semibold text-slate-900">
@@ -141,18 +144,20 @@ export function ConsumerCart({
                       ? onUpdateQty(item.productId, item.quantity - 1)
                       : onRemove(item.productId)
                   }
-                  className="h-6 w-6 rounded bg-white text-xs"
+                  className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                  aria-label={`Decrease quantity of ${item.productName}`}
                 >
-                  −
+                  {item.quantity > 1 ? <Minus aria-hidden="true" size={14} /> : <Trash2 aria-hidden="true" size={14} />}
                 </button>
                 <span className="w-6 text-center font-mono text-sm">
                   {item.quantity}
                 </span>
                 <button
                   onClick={() => onUpdateQty(item.productId, item.quantity + 1)}
-                  className="h-6 w-6 rounded bg-white text-xs"
+                  className="flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                  aria-label={`Increase quantity of ${item.productName}`}
                 >
-                  +
+                  <Plus aria-hidden="true" size={14} />
                 </button>
               </div>
               <div className="w-16 text-right font-mono font-bold text-emerald-700">
@@ -163,38 +168,41 @@ export function ConsumerCart({
         ))}
       </div>
 
-      <div className="mt-4 border-t border-slate-200 pt-3">
+      <div className="sticky bottom-0 z-10 -mx-1 mt-4 border-t border-slate-200 bg-white/95 px-1 pb-2 pt-3 backdrop-blur">
         <div className="flex justify-between text-lg font-bold">
           <span>Total</span>
           <span className="text-emerald-700">₹{total.toFixed(2)}</span>
         </div>
         <button
           onClick={() => setShowCheckout(!showCheckout)}
-          className="mt-3 w-full rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700"
+          className="mt-3 w-full rounded-md bg-emerald-800 py-2.5 text-sm font-semibold text-white hover:bg-emerald-900"
         >
-          {showCheckout ? "Cancel" : "Proceed to Checkout →"}
+          {showCheckout ? "Hide checkout" : "Continue to checkout"}
         </button>
       </div>
 
       {showCheckout && (
-        <div className="mt-4 space-y-3 rounded-lg bg-slate-50 p-4">
-          <h3 className="text-sm font-bold text-slate-900">Delivery Details</h3>
+        <div className="space-y-3 border-t border-slate-200 pt-4">
+          <h3 className="text-sm font-semibold text-slate-900">Delivery details</h3>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
+            aria-label="Your name"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
           <input
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             placeholder="Phone number"
+            aria-label="Phone number"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
           <textarea
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             placeholder="Delivery address"
+            aria-label="Delivery address"
             rows={2}
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
@@ -202,18 +210,19 @@ export function ConsumerCart({
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Order notes (optional)"
+            aria-label="Order notes (optional)"
             className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
           />
 
           {error && (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <div role="alert" className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-              ✓ {success}
+            <div role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              {success}
             </div>
           )}
 
@@ -228,7 +237,7 @@ export function ConsumerCart({
                 key={merchantId}
                 onClick={() => placeOrder(merchantId, merchantItems)}
                 disabled={submitting || !address || !name || !phone}
-                className="w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+                className="w-full rounded-md bg-emerald-800 py-2.5 text-xs font-semibold text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {submitting
                   ? "Placing order..."

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Check, Copy } from "lucide-react";
 import { formatDate } from "@/lib/formatDate";
 import { generateApiKey, revokeApiKey } from "@/lib/actions";
 import type { ApiKey } from "./types";
@@ -21,6 +22,8 @@ export function ApiKeysPanel({ apiKeys }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   async function handleGenerate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,11 +52,9 @@ export function ApiKeysPanel({ apiKeys }: Props) {
     }
   }
 
-  async function handleRevoke(keyId: string, keyName: string) {
-    if (!window.confirm(`Revoke "${keyName}"? External systems using this key will lose access.`)) {
-      return;
-    }
+  async function handleRevoke(keyId: string) {
     setRevokingId(keyId);
+    setConfirmingId(null);
     setError(null);
     try {
       const result = await revokeApiKey(keyId);
@@ -66,6 +67,16 @@ export function ApiKeysPanel({ apiKeys }: Props) {
       setError("Could not revoke the key.");
     } finally {
       setRevokingId(null);
+    }
+  }
+
+  async function copyIssuedKey() {
+    if (!issuedKey) return;
+    try {
+      await navigator.clipboard.writeText(issuedKey);
+      setCopied(true);
+    } catch {
+      setError("Clipboard access is unavailable. Select and copy the key manually.");
     }
   }
 
@@ -100,17 +111,23 @@ export function ApiKeysPanel({ apiKeys }: Props) {
 
           {issuedKey && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
-              <div className="font-bold">Copy this key now — it will not be shown again.</div>
+              <div className="font-semibold">Save this key now. It will not be shown again.</div>
               <code className="mt-1 block break-all rounded bg-white px-2 py-1 font-mono text-[11px]">
                 {issuedKey}
               </code>
-              <button
-                type="button"
-                onClick={() => setIssuedKey(null)}
-                className="mt-2 rounded-lg border border-emerald-300 bg-white px-3 py-1 font-semibold text-emerald-800"
-              >
-                I have saved it
-              </button>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button type="button" onClick={copyIssuedKey} className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-white px-3 py-2 font-semibold text-emerald-900 hover:bg-emerald-50">
+                  {copied ? <Check aria-hidden="true" size={14} /> : <Copy aria-hidden="true" size={14} />}
+                  {copied ? "Copied" : "Copy key"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIssuedKey(null); setCopied(false); }}
+                  className="rounded-md border border-emerald-300 bg-white px-3 py-2 font-semibold text-emerald-900 hover:bg-emerald-50"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           )}
 
@@ -121,34 +138,41 @@ export function ApiKeysPanel({ apiKeys }: Props) {
           )}
 
           {apiKeys.map((key) => (
-            <div
-              key={key.id}
-              className="flex items-center justify-between rounded-lg bg-slate-50 p-3 text-xs"
-            >
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-slate-900">{key.name}</span>
-                  <span
-                    className={`chip ${
-                      key.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
-                    }`}
-                  >
-                    {key.active ? "Active" : "Revoked"}
-                  </span>
+            <div key={key.id} className="rounded-md border border-slate-200 bg-white p-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900">{key.name}</span>
+                    <span className={`chip ${key.active ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"}`}>
+                      {key.active ? "Active" : "Revoked"}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 font-mono text-[11px] text-slate-600">
+                    ••••••••••••{key.last4} · {key.scopes.split(",").length} scopes · created {formatDate(key.createdAt)}
+                  </div>
                 </div>
-                <div className="mt-0.5 font-mono text-[11px] text-slate-600">
-                  ••••••••••••{key.last4} · {key.scopes.split(",").length} scopes · created{" "}
-                  {formatDate(key.createdAt)}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingId(confirmingId === key.id ? null : key.id)}
+                  disabled={!key.active || revokingId === key.id}
+                  className="rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-50 disabled:opacity-40"
+                >
+                  {revokingId === key.id ? "Revoking…" : "Revoke"}
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => handleRevoke(key.id, key.name)}
-                disabled={!key.active || revokingId === key.id}
-                className="rounded-lg border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-40"
-              >
-                {revokingId === key.id ? "Revoking…" : "Revoke"}
-              </button>
+              {confirmingId === key.id && (
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                  <p className="text-xs text-slate-700">Revoke this key? Connected systems will lose access.</p>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setConfirmingId(null)} className="rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                      Cancel
+                    </button>
+                    <button type="button" onClick={() => handleRevoke(key.id)} disabled={revokingId === key.id} className="rounded-md bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-800 disabled:opacity-50">
+                      Confirm revoke
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 

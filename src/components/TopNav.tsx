@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Menu, Store } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import { logout } from "@/lib/actions";
 import { PwaRegister } from "@/components/PwaRegister";
@@ -9,36 +10,46 @@ export async function TopNav() {
     <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-600 to-green-800 text-white shadow-sm">
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.3 4.6a1 1 0 00.9 1.4H19" />
-              <circle cx="9" cy="20" r="1.5" />
-              <circle cx="17" cy="20" r="1.5" />
-            </svg>
+          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-800 text-white">
+            <Store aria-hidden="true" size={18} strokeWidth={1.8} />
           </span>
           <div>
-            <div className="text-sm font-bold tracking-tight text-slate-900">OmniShelf</div>
-            <div className="-mt-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-500">
+            <div className="text-sm font-bold text-slate-900">OmniShelf</div>
+            <div className="-mt-0.5 hidden text-[10px] font-medium uppercase tracking-wider text-slate-500 sm:block">
               STORE MANAGEMENT
             </div>
           </div>
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          <NavLink href="/shop">Shop</NavLink>
-          <NavLink href="/marketplace">Marketplace</NavLink>
+          <NavLink href="/marketplace">Shop</NavLink>
           {session?.role === "ADMIN" && <NavLink href="/admin">Admin Console</NavLink>}
           {(session?.role === "VENDOR_OWNER" || session?.role === "VENDOR_CLERK") && (
             <NavLink href="/vendor">Vendor Console</NavLink>
           )}
         </nav>
 
+        <details className="group relative md:hidden">
+          <summary className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
+            <Menu aria-hidden="true" size={19} />
+            <span className="sr-only">Open navigation</span>
+          </summary>
+          <nav className="absolute left-0 top-full z-50 mt-2 flex min-w-52 flex-col rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
+            <NavLink href="/marketplace">Shop</NavLink>
+            {session?.role === "ADMIN" && <NavLink href="/admin">Admin Console</NavLink>}
+            {(session?.role === "VENDOR_OWNER" || session?.role === "VENDOR_CLERK") && (
+              <NavLink href="/vendor">Vendor Console</NavLink>
+            )}
+            {!session && <NavLink href="/login">Sign in</NavLink>}
+            {!session && <NavLink href="/onboarding">Create account</NavLink>}
+          </nav>
+        </details>
+
         <div className="flex items-center gap-2">
           <PwaRegister />
           {session ? (
             <>
-              <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 md:flex">
-                <span className="live-dot" />
+              <div className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 md:flex">
                 <span className="text-xs font-semibold text-slate-800">{session.name}</span>
                 <span className="chip bg-indigo-100 text-indigo-700">
                   {roleLabel(session.role)}

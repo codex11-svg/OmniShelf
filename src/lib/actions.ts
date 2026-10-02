@@ -34,14 +34,22 @@ import {
   getSession,
   setSession,
   clearSession,
-  createOtpSession,
-  verifyOtp,
   getUserByPhone,
+  getUserByEmail,
+  getUserById,
   requireRole,
   type SessionUser,
 } from "@/lib/auth";
 import { seedIfEmpty } from "@/lib/seed";
 import { randomUUID, createHmac } from "node:crypto";
+import {
+  addInventoryProductInputSchema,
+  createMerchantForAdminInputSchema,
+  createMerchantInputSchema,
+  createOrderInputSchema,
+  posSaleInputSchema,
+  updateProductDetailsInputSchema,
+} from "@/lib/validation";
 
 // Drizzle attaches the raw SQL of a failed statement to its errors.
 // Customer-facing flows must never surface that to the shopper.
@@ -64,33 +72,6 @@ export async function ensureSeeded(accessKey = "") {
   await seedIfEmpty();
 }
 
-// ---------------------------------------------------------
-// Auth actions
-// ---------------------------------------------------------
-export async function requestOtp(phone: string) {
-  if (!/^\+?[0-9]{9,15}$/.test(phone.replace(/\s/g, ""))) {
-    return { ok: false, error: "Invalid phone number" };
-  }
-  if (process.env.NODE_ENV === "production") {
-    return { ok: false, error: "Phone OTP delivery is not configured for this deployment." };
-  }
-  // Ensure seeded demo users exist
-  await seedIfEmpty();
-  const result = await createOtpSession(phone, "WHATSAPP");
-  // Demo convenience: expose OTP in response. In production, never do this.
-  return { ok: true, otp: result.otp, channel: "WHATSAPP" } as const;
-}
-
-export async function verifyAndLogin(phone: string, otp: string) {
-  const valid = await verifyOtp(phone, otp);
-  if (!valid) return { ok: false, error: "Invalid or expired OTP" };
-  const info = await getUserByPhone(phone);
-  if (!info) return { ok: false, error: "No account registered for this phone." };
-  await setSession(info.session);
-  const redirect = info.user.role === "ADMIN" ? "/admin" : "/vendor";
-  return { ok: true, redirect, role: info.user.role };
-}
-
 export async function logout() {
   await clearSession();
 }
@@ -109,6 +90,120 @@ export async function impersonateDemo(phone: string, accessKey: string) {
   await setSession(info.session);
   const redirect = info.user.role === "ADMIN" ? "/admin" : "/vendor";
   return { ok: true, redirect };
+}
+
+export async function loginWithFirebase(idToken: string) {
+  if (typeof idToken !== "string" || idToken.length < 20 || idToken.length > 8192) {
+    return { ok: false, error: "Invalid Firebase session. Sign in again." };
+  }
+
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  if (!apiKey) return { ok: false, error: "Firebase Authentication is not configured on this server." };
+
+  let firebaseUser: { localId: string; email?: string; emailVerified?: boolean; displayName?: string; phoneNumber?: string };
+  try {
+    const response = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      }
+    );
+    if (!response.ok) return { ok: false, error: "Firebase session expired or could not be verified. Sign in again." };
+    const result = await response.json() as { users?: Array<{ localId: string; email?: string; emailVerified?: boolean; displayName?: string; phoneNumber?: string }> };
+    const verifiedUser = result.users?.[0];
+    if (!verifiedUser?.localId) return { ok: false, error: "Firebase did not return a valid user." };
+    firebaseUser = verifiedUser;
+  } catch {
+    return { ok: false, error: "Unable to verify your Firebase session. Check your connection and try again." };
+  }
+
+  const uid = firebaseUser.localId;
+  const email = firebaseUser.email?.toLowerCase().trim() ?? null;
+  const phone = firebaseUser.phoneNumber?.trim().replace(/\s/g, "") ?? null;
+  const name = firebaseUser.displayName?.trim() || (email ? email.split("@")[0] : "Store Owner");
+
+  // Firebase identity is authoritative; only link an existing email account after Firebase verifies it.
+  let found = await getUserById(uid);
+  if (!found && email) {
+    const emailMatch = await getUserByEmail(email);
+    if (emailMatch && !firebaseUser.emailVerified) {
+      return { ok: false, error: "Verify your Firebase email before linking this account." };
+    }
+    found = emailMatch;
+  }
+
+  let userRecord;
+  let merchantRecord = null;
+
+  if (found) {
+    userRecord = found.user;
+    merchantRecord = found.merchant;
+
+    // Update lastLogin, and name/email/phone if they were not set
+    const updates: Partial<typeof users.$inferInsert> = {
+      lastLogin: new Date(),
+    };
+    if (!userRecord.email && email && firebaseUser.emailVerified) updates.email = email;
+    if (!userRecord.phone && phone) updates.phone = phone;
+    if ((!userRecord.name || userRecord.name === "User") && name) updates.name = name;
+
+    if (Object.keys(updates).length > 1) {
+      await db.update(users).set(updates).where(eq(users.id, userRecord.id));
+      userRecord = { ...userRecord, ...updates };
+    }
+  } else {
+    // 4. Create new user in database
+    const newUserValues = {
+      id: uid,
+      name,
+      email,
+      phone,
+      role: "VENDOR_OWNER" as const,
+      merchantId: null,
+      accessLevel: "FULL" as const,
+      lastLogin: new Date(),
+    };
+
+    await db.insert(users).values(newUserValues);
+    userRecord = {
+      ...newUserValues,
+      passkeyEnabled: false,
+      createdAt: new Date(),
+    };
+  }
+
+  // 5. Build and set session
+  const sessionUser: SessionUser = {
+    id: userRecord.id,
+    name: userRecord.name,
+    phone: userRecord.phone,
+    role: userRecord.role,
+    merchantId: userRecord.merchantId,
+    accessLevel: userRecord.accessLevel,
+    merchantName: merchantRecord?.name ?? null,
+    merchantType: merchantRecord?.type ?? null,
+    merchantKycStatus: merchantRecord?.kycStatus ?? null,
+  };
+
+  await setSession(sessionUser);
+
+  // Determine destination
+  let redirect = "/vendor";
+  if (userRecord.role === "ADMIN") {
+    redirect = "/admin";
+  } else if (!userRecord.merchantId) {
+    redirect = "/onboarding";
+  }
+
+  revalidatePath("/vendor");
+  revalidatePath("/admin");
+  revalidatePath("/");
+
+  return { ok: true, redirect, role: userRecord.role, isNew: !found };
 }
 
 // ---------------------------------------------------------
@@ -305,6 +400,10 @@ export async function completePosSale(data: {
   doctorName?: string;
   prescriptionKey?: string;
 }) {
+  const parsed = posSaleInputSchema.safeParse(data);
+  if (!parsed.success) return { ok: false, error: "The bill contains invalid items or details." };
+  data = parsed.data;
+
   const session = requireRole(await getSession(), ["VENDOR_OWNER", "VENDOR_CLERK"]);
   if (!session.merchantId) return { ok: false, error: "No store is attached to this account." };
   if (session.role === "VENDOR_CLERK" && session.accessLevel === "SCAN_ONLY") {
@@ -434,6 +533,10 @@ export async function addInventoryProduct(data: {
   requiresPrescription?: boolean;
   imageUrl?: string;
 }) {
+  const parsed = addInventoryProductInputSchema.safeParse(data);
+  if (!parsed.success) return { ok: false, error: "Enter valid product details and stock values." };
+  data = parsed.data;
+
   const session = requireRole(await getSession(), ["VENDOR_OWNER"]);
   if (!session.merchantId) return { ok: false, error: "No store is attached to this account." };
   if (!data.name.trim() || !data.category.trim() || !Number.isFinite(data.mrp) || data.mrp <= 0 ||
@@ -509,6 +612,10 @@ export async function updateProductDetails(
     pushToMarketplace?: boolean;
   }
 ) {
+  const parsed = updateProductDetailsInputSchema.safeParse(data);
+  if (!parsed.success) return { ok: false, error: "Enter valid product details and stock values." };
+  data = parsed.data;
+
   const session = requireRole(await getSession(), ["VENDOR_OWNER"]);
   if (!session.merchantId) return { ok: false, error: "No store attached to this account." };
 
@@ -726,6 +833,7 @@ export async function listMarketplace(city?: string | null) {
       merchantType: merchants.type,
       scheduleClass: products.scheduleClass,
       requiresPrescription: products.requiresPrescription,
+      imageUrl: products.imageUrl,
     })
     .from(products)
     .innerJoin(merchants, eq(products.merchantId, merchants.id))
@@ -1402,6 +1510,10 @@ export async function createMerchant(data: {
   licenseNumber?: string;
   licenseDocUrl?: string;
 }) {
+  const parsed = createMerchantInputSchema.safeParse(data);
+  if (!parsed.success) return { ok: false, error: "Complete the required store fields with valid values." };
+  data = parsed.data;
+
   const session = await getSession();
   const phone = data.phone.trim().replace(/\s/g, "");
   const requiredValues = [
@@ -1421,21 +1533,32 @@ export async function createMerchant(data: {
   }
 
   // Check if phone is already linked to an existing merchant
-  const [existingUser] = await db
+  const [phoneUser] = await db
     .select()
     .from(users)
     .where(eq(users.phone, phone))
     .limit(1);
 
-  if (existingUser?.merchantId) {
+  const [sessionUser] = session
+    ? await db.select().from(users).where(eq(users.id, session.id)).limit(1)
+    : [];
+
+  if (phoneUser?.merchantId) {
     return { ok: false, error: "A store is already registered with this phone number." };
   }
-  if (existingUser && (session?.id !== existingUser.id || session.role !== "VENDOR_OWNER")) {
+  if (sessionUser?.merchantId) {
+    return { ok: false, error: "This account is already linked to a store." };
+  }
+  if (session && session.role !== "VENDOR_OWNER") {
+    return { ok: false, error: "Sign in with a vendor owner account before registering a store." };
+  }
+  if (phoneUser && session?.id !== phoneUser.id) {
     return { ok: false, error: "This phone already belongs to an account. Sign in before registering a store." };
   }
 
+  const existingUser = sessionUser ?? phoneUser;
   const merchantId = randomUUID();
-  const userId = session?.id ?? existingUser?.id ?? randomUUID();
+  const userId = existingUser?.id ?? session?.id ?? randomUUID();
 
   try {
     await db.transaction(async (tx) => {
@@ -1518,8 +1641,15 @@ export async function createMerchant(data: {
     revalidatePath("/admin");
     return { ok: true, merchantId };
   } catch (err) {
-    console.error("Create merchant error:", err);
-    return { ok: false, error: err instanceof Error ? err.message : "Failed to create store." };
+    const databaseError = (err as { cause?: { code?: string; constraint?: string } } | null)?.cause;
+    console.error("Create merchant error:", {
+      code: databaseError?.code,
+      constraint: databaseError?.constraint,
+    });
+    return {
+      ok: false,
+      error: "Store setup could not be completed. Please check the details and try again.",
+    };
   }
 }
 
@@ -1536,6 +1666,10 @@ export async function createMerchantForAdmin(data: {
   licenseDocUrl?: string;
   notes?: string;
 }) {
+  const parsed = createMerchantForAdminInputSchema.safeParse(data);
+  if (!parsed.success) return { ok: false, error: "Complete the required merchant fields with valid values." };
+  data = parsed.data;
+
   const session = requireRole(await getSession(), ["ADMIN"]);
   const requiredValues = [data.name, data.ownerName, data.phone, data.whatsapp, data.address, data.city, data.pincode, data.licenseNumber];
   if (requiredValues.some((value) => !value.trim()) || !/^\+?[0-9\s-]{9,18}$/.test(data.phone)) {
@@ -1601,6 +1735,10 @@ export async function createOrder(data: {
   consumerName: string;
   notes?: string;
 }) {
+  const parsed = createOrderInputSchema.safeParse(data);
+  if (!parsed.success) return { ok: false, error: "Check the delivery details and cart items." };
+  data = parsed.data;
+
   if (
     !data.merchantId ||
     !data.items.length ||

@@ -175,7 +175,7 @@ export const platformLedger = pgTable(
   (t) => [index("ledger_month_idx").on(t.month)]
 );
 
-// ---------- WhatsApp OTP sessions ----------
+// Legacy table retained for existing database compatibility; the application no longer reads or writes OTP sessions.
 export const otpSessions = pgTable("otp_sessions", {
   id: text("id").primaryKey(),
   phone: text("phone").notNull(),

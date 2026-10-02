@@ -40,11 +40,11 @@ A unified platform for Kirana grocers and Medical pharmacies — unifying the **
 - Compliance-enforced: Schedule H / H1 / X drugs auto-blocked
 - Verified-store badges
 
-### 🔐 2026 Authentication
-- **WhatsApp OTP** (demo mode shows the code inline)
-- **WebAuthn Passkeys** supported on registered devices
+### 🔐 Authentication
+- **Firebase Authentication** with Google and email/password sign-in
 - HMAC-signed httpOnly session cookies — no tokens in localStorage
 - Per-tenant RBAC with session re-verification on every server action
+- Server verifies Firebase ID tokens before issuing application sessions
 
 ## 🛠️ Stack
 
@@ -68,7 +68,7 @@ src/
 ├── components/         # Shared UI (TopNav)
 ├── db/                 # Drizzle schema + connection
 └── lib/
-    ├── auth.ts         # Session / OTP / RBAC
+    ├── auth.ts         # Session / Firebase identity / RBAC
     ├── actions.ts      # All server actions (~1000 LOC)
     └── seed.ts         # Demo dataset (merchants, products, txs, predictions)
 ```
@@ -100,6 +100,10 @@ should sign in before linking a store to their account.
 
 For an existing PostgreSQL database, set its connection string in `.env.local`. Local development seeds demo records on the login page.
 
+### Private document storage
+
+New license and prescription uploads use Supabase Storage. Create a **private** bucket (default name: `documents`) and configure `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `SUPABASE_STORAGE_BUCKET` in the server environment. The service-role key must never use a `NEXT_PUBLIC_` prefix. The upload route verifies the bucket is private and serves documents only after checking their database ownership record. Set `STORAGE_PROVIDER=local` only for local development without Supabase.
+
 ```bash
 npm run db:push
 npm run dev
@@ -115,9 +119,10 @@ npm run dev
     - `SESSION_SECRET` — a unique random secret with at least 32 characters
     - `CRON_SECRET` — a separate random secret for the daily in-app alert job
     - `DEMO_ACCESS_KEY` — optional private key to enable seeded one-tap prototype accounts
-    - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME` — required for private license/prescription document uploads
+    - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` — required for private license/prescription uploads; the bucket must be private
+    - Legacy `R2_*` credentials are only needed to retrieve documents uploaded before the Supabase storage migration
 5. Apply the schema from a trusted environment with `npm run db:push` using the production `DATABASE_URL`.
-6. Do not enable public demo personas for real accounts. Phone OTP delivery, Clerk, email/SMS/WhatsApp notifications, payment processing, and delivery integrations are not configured by this prototype and require provider setup.
+6. Do not enable public demo personas for real accounts. Email/SMS/WhatsApp notifications, payment processing, and delivery integrations require separate provider setup.
 
 ### Demo accounts
 Accounts seed automatically in local development. On production, demo seeding and one-tap sign-in are disabled unless `DEMO_ACCESS_KEY` is configured; users must enter that key on `/login` to load the demo personas.

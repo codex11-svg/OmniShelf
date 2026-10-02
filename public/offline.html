@@ -3,23 +3,40 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#14532d">
+    <meta name="theme-color" content="#176b52">
     <title>You're offline | OmniShelf</title>
     <style>
-      body { align-items: center; background: #f5f8f3; color: #0f172a; display: flex; font: 16px/1.6 system-ui, sans-serif; justify-content: center; margin: 0; min-height: 100vh; padding: 24px; }
-      main { background: white; border: 1px solid #e2e8f0; border-radius: 24px; max-width: 440px; padding: 36px; text-align: center; }
-      img { height: 64px; width: 64px; }
-      h1 { font-size: 1.75rem; line-height: 1.2; margin: 20px 0 8px; }
-      p { color: #475569; margin: 0; }
-      button { background: #14532d; border: 0; border-radius: 12px; color: white; cursor: pointer; font: inherit; font-weight: 700; margin-top: 24px; padding: 12px 20px; }
+      :root { color-scheme: light; font-family: Inter, "Avenir Next", "Segoe UI", sans-serif; color: #172923; background: #f4f6f3; }
+      * { box-sizing: border-box; }
+      body { align-items: center; display: flex; justify-content: center; margin: 0; min-height: 100vh; padding: 20px; }
+      main { background: #fff; border: 1px solid #dce4dc; border-radius: 8px; max-width: 480px; padding: clamp(24px, 6vw, 40px); width: 100%; }
+      header { align-items: center; display: flex; gap: 10px; }
+      img { height: 32px; width: 32px; }
+      .brand { font-size: 14px; font-weight: 700; }
+      .status { align-items: center; color: #946019; display: inline-flex; font-size: 12px; font-weight: 600; gap: 8px; margin: 32px 0 10px; }
+      .status::before { background: #d79a3d; border-radius: 50%; content: ""; height: 8px; width: 8px; }
+      h1 { font-size: 28px; letter-spacing: 0; line-height: 1.2; margin: 0 0 10px; }
+      p { color: #52645b; font-size: 14px; line-height: 1.6; margin: 0; }
+      .actions { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+      button { background: #176b52; border: 0; border-radius: 6px; color: white; cursor: pointer; font: inherit; font-size: 14px; font-weight: 600; min-height: 42px; padding: 0 16px; }
+      button:hover { background: #12543f; }
+      button:focus-visible { outline: 2px solid #176b52; outline-offset: 3px; }
+      .note { border-top: 1px solid #e8ede8; font-size: 12px; margin-top: 24px; padding-top: 16px; }
     </style>
   </head>
   <body>
     <main>
-      <img src="/icon.svg" alt="">
+      <header>
+        <img src="/icon.svg" alt="">
+        <span class="brand">OmniShelf</span>
+      </header>
+      <div class="status">Connection unavailable</div>
       <h1>You're offline</h1>
-      <p>Connect to the internet and try again. Your store data is not saved on this device for offline access.</p>
-      <button type="button" onclick="location.reload()">Try again</button>
+      <p>Reconnect to continue. Store changes are not saved offline on this device.</p>
+      <div class="actions">
+        <button type="button" onclick="location.reload()">Try again</button>
+      </div>
+      <p class="note">Your account and store data remain protected while offline.</p>
     </main>
   </body>
 </html>

@@ -41,6 +41,7 @@ Thumbs.db
 # Uploaded user files (KYC documents, etc.) - never commit these.
 public/uploads/*
 !public/uploads/.gitkeep
+.local-data/
 
 # Misc
 *.log

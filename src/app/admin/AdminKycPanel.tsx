@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Check, Clock3, FileText, Phone } from "lucide-react";
 import { approveKyc, rejectKyc } from "@/lib/actions";
 
 type Merchant = {
@@ -37,7 +38,7 @@ export function AdminKycPanel({ merchants }: { merchants: Merchant[] }) {
         <div className="space-y-3">
           {pending.length === 0 && (
             <div className="card p-6 text-center text-sm text-slate-500">
-              🎉 No merchants pending review.
+              No merchants pending review.
             </div>
           )}
           {pending.map((m) => (
@@ -68,7 +69,7 @@ export function AdminKycPanel({ merchants }: { merchants: Merchant[] }) {
                   {m.ownerName} · {m.city} · {m.licenseNumber ?? "No license"}
                 </div>
               </div>
-              <span className="chip bg-emerald-50 text-emerald-700">APPROVED</span>
+              <span className="chip bg-emerald-50 text-emerald-800"><Check aria-hidden="true" size={12} /> APPROVED</span>
             </div>
           ))}
         </div>
@@ -80,20 +81,38 @@ export function AdminKycPanel({ merchants }: { merchants: Merchant[] }) {
 function KycCard({ merchant }: { merchant: Merchant }) {
   const [notes, setNotes] = useState(merchant.kycNotes ?? "");
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleApprove() {
+    setError(null);
+    setFeedback(null);
     setBusy("approve");
-    await approveKyc(merchant.id, notes || undefined);
-    setBusy(null);
+    try {
+      await approveKyc(merchant.id, notes || undefined);
+      setFeedback("Merchant approved.");
+    } catch {
+      setError("Approval could not be saved. Please try again.");
+    } finally {
+      setBusy(null);
+    }
   }
   async function handleReject() {
     if (!notes.trim()) {
-      alert("Please add rejection notes.");
+      setError("Add a note explaining the rejection before continuing.");
       return;
     }
+    setError(null);
+    setFeedback(null);
     setBusy("reject");
-    await rejectKyc(merchant.id, notes);
-    setBusy(null);
+    try {
+      await rejectKyc(merchant.id, notes);
+      setFeedback("Merchant rejected.");
+    } catch {
+      setError("Rejection could not be saved. Please try again.");
+    } finally {
+      setBusy(null);
+    }
   }
 
   return (
@@ -105,7 +124,8 @@ function KycCard({ merchant }: { merchant: Merchant }) {
             <span className={`chip ${merchant.type === "MEDICAL" ? "bg-rose-100 text-rose-700" : "bg-blue-100 text-blue-700"}`}>
               {merchant.type === "MEDICAL" ? "💊 Medical" : "🛒 Kirana"}
             </span>
-            <span className={`chip ${merchant.kycStatus === "PENDING" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
+            <span className={`chip ${merchant.kycStatus === "PENDING" ? "bg-amber-100 text-amber-900" : "bg-blue-100 text-blue-800"}`}>
+              {merchant.kycStatus === "PENDING" && <Clock3 aria-hidden="true" size={12} />}
               {merchant.kycStatus}
             </span>
           </div>
@@ -113,7 +133,7 @@ function KycCard({ merchant }: { merchant: Merchant }) {
             Owner: <b>{merchant.ownerName}</b> · {merchant.address}, {merchant.city} {merchant.pincode}
           </div>
           <div className="mt-0.5 text-xs text-slate-600">
-            📞 {merchant.phone} · License: <code className="rounded bg-slate-100 px-1">{merchant.licenseNumber ?? "—"}</code>
+            <Phone aria-hidden="true" size={12} className="mr-1 inline" /> {merchant.phone} · License: <code className="rounded bg-slate-100 px-1">{merchant.licenseNumber ?? "—"}</code>
           </div>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -122,7 +142,7 @@ function KycCard({ merchant }: { merchant: Merchant }) {
               onClick={() => window.open(`/api/upload?key=${encodeURIComponent(merchant.licenseDocUrl!)}`, "_blank", "noopener,noreferrer")}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
-              📄 View license
+              <FileText aria-hidden="true" size={14} className="mr-1 inline" /> View license
             </button>
           )}
           {merchant.licenseDocUrl?.startsWith("/docs/") && (
@@ -142,6 +162,12 @@ function KycCard({ merchant }: { merchant: Merchant }) {
         />
       </div>
 
+      {(error || feedback) && (
+        <p role={error ? "alert" : "status"} className={`mt-3 rounded-md px-3 py-2 text-xs font-medium ${error ? "border border-rose-200 bg-rose-50 text-rose-800" : "border border-emerald-200 bg-emerald-50 text-emerald-800"}`}>
+          {error ?? feedback}
+        </p>
+      )}
+
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           onClick={handleApprove}
@@ -159,7 +185,7 @@ function KycCard({ merchant }: { merchant: Merchant }) {
         </button>
         {merchant.type === "MEDICAL" && (
           <span className="chip bg-rose-50 text-rose-700">
-            ⚠ Schedule H/X drugs will remain auto-blocked from B2C clearance
+            Schedule H/X products remain blocked from consumer clearance
           </span>
         )}
       </div>

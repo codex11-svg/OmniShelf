@@ -34,7 +34,12 @@ export function AdminLedgerPanel({ ledger }: { ledger: LedgerRow[] }) {
     tierMap[r.saasTier] = (tierMap[r.saasTier] ?? 0) + parseFloat(String(r.saasFee));
   }
   const tierSeries = Object.entries(tierMap).map(([name, value]) => ({ name, value }));
-  const TIER_COLORS: Record<string, string> = { Starter: "#3b82f6", Growth: "#10b981", Enterprise: "#8b5cf6" };
+  const TIER_COLORS: Record<string, string> = { Starter: "#52645b", Growth: "#176b52", Enterprise: "#b45e42" };
+  const totals = ledger.reduce((sum, row) => ({
+    gmv: sum.gmv + Number(row.grossGmv),
+    commission: sum.commission + Number(row.commissionAmount),
+    saas: sum.saas + Number(row.saasFee),
+  }), { gmv: 0, commission: 0, saas: 0 });
 
   // Per-merchant GMV (most recent month)
   const latestMonth = monthlySeries.at(-1)?.month ?? "";
@@ -49,26 +54,31 @@ export function AdminLedgerPanel({ ledger }: { ledger: LedgerRow[] }) {
 
   return (
     <div className="space-y-6">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <LedgerMetric label="Gross merchandise value" value={totals.gmv} />
+        <LedgerMetric label="Commission revenue" value={totals.commission} />
+        <LedgerMetric label="Subscription fees" value={totals.saas} />
+      </div>
       {/* Monthly GMV vs Commission */}
       <div className="card p-5">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">GMV vs Commission earned</h3>
-            <p className="text-xs text-slate-500">Platform-wide trend — last 5 months</p>
+            <h3 className="text-sm font-semibold text-slate-900">GMV and commission</h3>
+            <p className="text-xs text-slate-500">Monthly totals across recorded ledger entries</p>
           </div>
-          <span className="chip bg-indigo-100 text-indigo-700">Live ledger</span>
+          <span className="chip bg-emerald-50 text-emerald-800">{ledger.length} entries</span>
         </div>
         <div className="h-64 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={monthlySeries}>
               <defs>
                 <linearGradient id="gGmv" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6366f1" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#176b52" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#176b52" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gComm" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#b45e42" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#b45e42" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" />
@@ -79,8 +89,8 @@ export function AdminLedgerPanel({ ledger }: { ledger: LedgerRow[] }) {
                 contentStyle={{ borderRadius: 10, fontSize: 12, border: "1px solid #e2e8f0" }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Area type="monotone" dataKey="gmv" name="GMV" stroke="#6366f1" strokeWidth={2} fill="url(#gGmv)" />
-              <Area type="monotone" dataKey="commission" name="Commission" stroke="#10b981" strokeWidth={2} fill="url(#gComm)" />
+              <Area type="monotone" dataKey="gmv" name="GMV" stroke="#176b52" strokeWidth={2} fill="url(#gGmv)" />
+              <Area type="monotone" dataKey="commission" name="Commission" stroke="#b45e42" strokeWidth={2} fill="url(#gComm)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -117,9 +127,9 @@ export function AdminLedgerPanel({ ledger }: { ledger: LedgerRow[] }) {
                 <XAxis dataKey="name" stroke="#64748b" fontSize={10} />
                 <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v: number) => `₹${(v / 1000).toFixed(0)}k`} />
                 <Tooltip formatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`} />
-                <Bar dataKey="gmv" name="GMV" radius={[8, 8, 0, 0]}>
+                <Bar dataKey="gmv" name="GMV" radius={[4, 4, 0, 0]}>
                   {merchantLatest.map((e, i) => (
-                    <Cell key={i} fill={e.type === "MEDICAL" ? "#e11d48" : "#3b82f6"} />
+                    <Cell key={i} fill={e.type === "MEDICAL" ? "#b45e42" : "#176b52"} />
                   ))}
                 </Bar>
               </BarChart>
@@ -168,9 +178,27 @@ export function AdminLedgerPanel({ ledger }: { ledger: LedgerRow[] }) {
                   <td className="px-4 py-2 text-right font-mono text-slate-700">₹{parseFloat(String(r.saasFee)).toLocaleString("en-IN")}</td>
                 </tr>
               ))}
+              {ledger.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-500">
+                    No commission entries have been recorded.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function LedgerMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="card p-4">
+      <div className="text-xs font-medium text-slate-500">{label}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+        ₹{value.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
       </div>
     </div>
   );

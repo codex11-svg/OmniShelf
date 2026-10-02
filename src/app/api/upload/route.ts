@@ -1,12 +1,22 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getSession } from "@/lib/auth";
 import { db } from "@/db";
 import { merchants, scheduleHLogs } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import {
+  getFirebaseDownloadUrl,
+} from "@/lib/firebase";
+import {
+  createPrivateDocumentUrl,
+  getSupabaseObjectPath,
+  isSafeSupabaseDocumentKey,
+  isSupabaseStorageConfigured,
+  uploadPrivateDocument,
+} from "@/lib/supabase-storage";
 
 const maxFileSize = 10 * 1024 * 1024; // 10 MB
 const allowedTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
@@ -41,6 +51,13 @@ export async function POST(req: Request) {
       return Response.json({ error: "Provide a valid license or prescription document." }, { status: 400 });
     }
 
+    if (type === "prescription" && !session) {
+      return Response.json({ error: "Sign in before uploading a prescription." }, { status: 401 });
+    }
+    if (type === "prescription" && (!session?.merchantId || !["VENDOR_OWNER", "VENDOR_CLERK"].includes(session.role))) {
+      return Response.json({ error: "A vendor account is required to upload a prescription." }, { status: 403 });
+    }
+
     if (file.size <= 0 || file.size > maxFileSize) {
       return Response.json({ error: "File must be smaller than 10 MB." }, { status: 400 });
     }
@@ -51,23 +68,7 @@ export async function POST(req: Request) {
       return Response.json({ error: "The selected file content does not match its file type." }, { status: 400 });
     }
 
-    const uploaderId = session?.id ?? "guest";
-    const storage = createStorageClient();
-    const bucket = process.env.R2_BUCKET_NAME;
-
-    // Cloudflare R2 storage if configured
-    if (storage && bucket) {
-      const key = `${uploaderId}/${type}/${randomUUID()}`;
-      await storage.send(new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        Body: Buffer.from(await file.arrayBuffer()),
-        ContentType: file.type,
-      }));
-      return Response.json({ key, url: `/api/upload?key=${encodeURIComponent(key)}` });
-    }
-
-    // Local filesystem storage fallback (offline / local dev mode)
+    const uploaderId = session?.id ?? "anonymous";
     const extMap: Record<string, string> = {
       "application/pdf": "pdf",
       "image/jpeg": "jpg",
@@ -75,18 +76,38 @@ export async function POST(req: Request) {
       "image/webp": "webp",
     };
     const extension = extMap[file.type] || "bin";
-    const filename = `${type}_${randomUUID().slice(0, 12)}.${extension}`;
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
 
-    await fs.promises.mkdir(uploadsDir, { recursive: true });
-    const filePath = path.join(uploadsDir, filename);
-    await fs.promises.writeFile(filePath, Buffer.from(await file.arrayBuffer()));
+    const storageProvider = process.env.STORAGE_PROVIDER ?? (process.env.NODE_ENV === "production" ? "supabase" : "local");
 
-    const localUrl = `/uploads/${filename}`;
-    return Response.json({ key: localUrl, url: localUrl });
+    // 0. If local storage is explicitly requested, skip external cloud providers
+    if (storageProvider === "local") {
+      const filename = `${randomUUID()}.${extension}`;
+      const key = `local/${type}/${filename}`;
+      const uploadsDir = path.join(process.cwd(), ".local-data", "uploads", type);
+
+      await fs.promises.mkdir(uploadsDir, { recursive: true });
+      const filePath = path.join(uploadsDir, filename);
+      await fs.promises.writeFile(filePath, Buffer.from(await file.arrayBuffer()));
+
+      return Response.json({ key, url: `/api/upload?key=${encodeURIComponent(key)}`, provider: "local" });
+    }
+
+    if (storageProvider !== "supabase") {
+      return Response.json({ error: "Unsupported document storage provider." }, { status: 503 });
+    }
+    if (!isSupabaseStorageConfigured()) {
+      return Response.json({ error: "Supabase private document storage is not configured." }, { status: 503 });
+    }
+
+    const folder = type === "license" ? "licenses" : "prescriptions";
+    const ownerKey = createHash("sha256").update(uploaderId).digest("hex");
+    const objectPath = `documents/${folder}/${ownerKey}/${randomUUID()}.${extension}`;
+    await uploadPrivateDocument(objectPath, await file.arrayBuffer(), file.type);
+    const key = `supabase:${objectPath}`;
+    return Response.json({ key, url: `/api/upload?key=${encodeURIComponent(key)}`, provider: "supabase" });
   } catch (error) {
     console.error("Upload error:", error);
-    return Response.json({ error: error instanceof Error ? error.message : "Upload failed" }, { status: 500 });
+    return Response.json({ error: "Document upload failed. Please try again." }, { status: 500 });
   }
 }
 
@@ -94,15 +115,18 @@ export async function GET(req: Request) {
   const key = new URL(req.url).searchParams.get("key");
   if (!key || key.includes("..")) return new Response("Not found", { status: 404 });
 
-  // If already a local static url
-  if (key.startsWith("/uploads/") || key.startsWith("/docs/")) {
-    return Response.redirect(new URL(key, req.url).toString(), 302);
-  }
-
   const session = await getSession();
   if (!session) return new Response("Unauthorized", { status: 401 });
 
-  const isPrescription = key.includes("/prescription/");
+  const localKey = /^local\/(license|prescription)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(pdf|jpg|png|webp)$/i.exec(key);
+  if (key.startsWith("local/") && !localKey) return new Response("Not found", { status: 404 });
+
+  const supabaseObjectPath = getSupabaseObjectPath(key);
+  if (key.startsWith("supabase:") && !isSafeSupabaseDocumentKey(key)) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const isPrescription = key.includes("/prescription/") || key.includes("prescription");
   const permitted = isPrescription
     ? session.role === "ADMIN"
       ? await db.select({ id: scheduleHLogs.id }).from(scheduleHLogs).where(eq(scheduleHLogs.prescriptionUrl, key)).limit(1)
@@ -116,6 +140,60 @@ export async function GET(req: Request) {
         : [];
   if (!permitted.length) return new Response("Forbidden", { status: 403 });
 
+  if (supabaseObjectPath) {
+    try {
+      const fileName = supabaseObjectPath.split("/").at(-1) ?? "document";
+      const signedUrl = await createPrivateDocumentUrl(supabaseObjectPath, fileName);
+      if (!signedUrl) return new Response("Document storage is not configured", { status: 503 });
+      return Response.redirect(signedUrl, 302);
+    } catch {
+      return new Response("Document retrieval failed", { status: 500 });
+    }
+  }
+
+  // Handle Firebase Storage key
+  if (key.startsWith("firebase:")) {
+    const storagePath = key.replace(/^firebase:/, "");
+    try {
+      const downloadUrl = await getFirebaseDownloadUrl(storagePath);
+      return Response.redirect(downloadUrl, 302);
+    } catch (fbErr) {
+      console.error("Firebase Storage retrieval failed:", fbErr);
+      return new Response("Document retrieval failed", { status: 500 });
+    }
+  }
+
+  // Handle direct Firebase URL
+  if (key.startsWith("https://firebasestorage.googleapis.com")) {
+    return Response.redirect(key, 302);
+  }
+
+  // Handle local development files
+  if (localKey) {
+    const [, type, filename] = localKey;
+    const filePath = path.join(process.cwd(), ".local-data", "uploads", type, `${filename}.${localKey[3]}`);
+    try {
+      const file = await fs.promises.readFile(filePath);
+      const contentTypes: Record<string, string> = {
+        pdf: "application/pdf",
+        jpg: "image/jpeg",
+        png: "image/png",
+        webp: "image/webp",
+      };
+      return new Response(new Uint8Array(file), {
+        headers: {
+          "Cache-Control": "private, no-store",
+          "Content-Disposition": `attachment; filename="document.${localKey[3]}"`,
+          "Content-Type": contentTypes[localKey[3].toLowerCase()],
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+  }
+
+  // Handle Cloudflare R2
   const storage = createStorageClient();
   const bucket = process.env.R2_BUCKET_NAME;
   if (!storage || !bucket) return new Response("Document storage is not configured", { status: 503 });

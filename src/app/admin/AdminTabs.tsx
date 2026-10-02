@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Activity, BarChart3, ClipboardCheck, Megaphone, Radio, Shield, Ticket, UserPlus, WalletCards,
+} from "lucide-react";
+import { WorkspaceTabs } from "@/components/WorkspaceTabs";
 import { AdminKycPanel } from "./AdminKycPanel";
 import { AdminCompliancePanel } from "./AdminCompliancePanel";
 import { AdminLedgerPanel } from "./AdminLedgerPanel";
@@ -93,15 +97,15 @@ type Props = {
 };
 
 const TABS = [
-  { id: "kyc", label: "KYC & Verification", icon: "🪪" },
-  { id: "compliance", label: "Compliance Switches", icon: "🛡️" },
-  { id: "ledger", label: "Platform Ledger", icon: "📊" },
-  { id: "tickers", label: "Regional Tickers", icon: "📡" },
-  { id: "announcements", label: "Announcements", icon: "📣" },
-  { id: "tickets", label: "Support Queue", icon: "🎫" },
-  { id: "scorecards", label: "Vendor Scorecards", icon: "🏆" },
-  { id: "audit", label: "Audit Log", icon: "📝" },
-  { id: "onboarding", label: "Onboarding Wizard", icon: "🧭" },
+  { id: "kyc", label: "KYC & verification", icon: ClipboardCheck },
+  { id: "compliance", label: "Compliance", icon: Shield },
+  { id: "ledger", label: "Platform ledger", icon: WalletCards },
+  { id: "tickers", label: "Regional signals", icon: Radio },
+  { id: "announcements", label: "Announcements", icon: Megaphone },
+  { id: "tickets", label: "Support queue", icon: Ticket },
+  { id: "scorecards", label: "Vendor scorecards", icon: BarChart3 },
+  { id: "audit", label: "Audit log", icon: Activity },
+  { id: "onboarding", label: "Add merchant", icon: UserPlus },
 ] as const;
 
 export function AdminTabs(props: Props) {
@@ -109,23 +113,7 @@ export function AdminTabs(props: Props) {
 
   return (
     <div className="mt-8">
-      <div className="mb-4 flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-white p-1.5">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition md:text-sm ${
-              tab === t.id ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <span>{t.icon}</span>
-            <span className="hidden md:inline">{t.label}</span>
-            <span className="md:hidden">{t.label.split(" ")[0]}</span>
-          </button>
-        ))}
-      </div>
-
-      <div>
+      <WorkspaceTabs value={tab} onValueChange={setTab} ariaLabel="Admin console sections" tabs={TABS}>
         {tab === "kyc" && <AdminKycPanel merchants={props.merchants} />}
         {tab === "compliance" && <AdminCompliancePanel switches={props.switches} />}
         {tab === "ledger" && <AdminLedgerPanel ledger={props.ledger} />}
@@ -135,7 +123,7 @@ export function AdminTabs(props: Props) {
         {tab === "scorecards" && <AdminScorecardsPanel scorecards={props.scorecards} />}
         {tab === "audit" && <AdminAuditPanel logs={props.auditLogs} />}
         {tab === "onboarding" && <AdminOnboardingPanel />}
-      </div>
+      </WorkspaceTabs>
     </div>
   );
 }

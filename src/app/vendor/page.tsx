@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { AlertTriangle, Pill, Store, Tag } from "lucide-react";
 import { getSession } from "@/lib/auth";
 import {
   listMyProducts,
@@ -65,34 +66,34 @@ export default async function VendorPage() {
   const last30Orders = series.reduce((s, d) => s + d.orders, 0);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="dashboard-enter mx-auto max-w-7xl px-4 py-8">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="mb-1 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-widest text-emerald-700">
-            🏪 Vendor Console · {isOwner ? "Store Owner" : "Billing Clerk"}
+          <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase text-emerald-800">
+            <Store aria-hidden="true" size={14} /> Vendor workspace · {isOwner ? "Store owner" : "Billing clerk"}
           </div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
             {session.merchantName ?? "Your store"}
           </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Domain:{" "}
-            <span className={`chip ${session.merchantType === "MEDICAL" ? "bg-rose-100 text-rose-700" : "bg-blue-100 text-blue-700"}`}>
-              {session.merchantType === "MEDICAL" ? "💊 Medical" : "🛒 Kirana"}
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+            <span className={`chip ${session.merchantType === "MEDICAL" ? "bg-rose-50 text-rose-800" : "bg-blue-50 text-blue-800"}`}>
+              {session.merchantType === "MEDICAL" ? <Pill aria-hidden="true" size={12} /> : <Store aria-hidden="true" size={12} />}
+              {session.merchantType === "MEDICAL" ? "Pharmacy" : "Grocery store"}
             </span>
             {session.merchantKycStatus !== "APPROVED" && (
-              <span className="chip bg-amber-100 text-amber-700">⚠ KYC: {session.merchantKycStatus}</span>
+              <span className="chip bg-amber-50 text-amber-900"><AlertTriangle aria-hidden="true" size={12} /> KYC: {session.merchantKycStatus}</span>
             )}
             {!isOwner && (
               <span className="chip bg-slate-100 text-slate-700">
                 Access: {session.accessLevel === "SCAN_ONLY" ? "Scan-only" : "Billing"}
               </span>
             )}
-          </p>
+          </div>
         </div>
       </div>
 
       {/* Quick stats — visible to both owner and clerk */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatCard label="SKUs" value={totalItems} tone="indigo" />
         <StatCard label="Units in stock" value={totalUnits} tone="blue" />
         <StatCard label="Shelf value" value={`₹${Math.round(totalValue).toLocaleString("en-IN")}`} tone="emerald" />
@@ -108,13 +109,13 @@ export default async function VendorPage() {
         <div className="mt-4 flex flex-wrap gap-2">
           {lowStock > 0 && isOwner && (
             <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">
-              <span className="text-base">📉</span>
+              <AlertTriangle aria-hidden="true" size={15} />
               {lowStock} items below reorder threshold
             </div>
           )}
           {onMarketplace > 0 && (
             <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-              <span className="text-base">🏷️</span>
+              <Tag aria-hidden="true" size={15} />
               {onMarketplace} items on public clearance
             </div>
           )}
@@ -146,17 +147,16 @@ export default async function VendorPage() {
 }
 
 function StatCard({ label, value, tone }: { label: string; value: string | number; tone: "indigo" | "blue" | "emerald" | "violet" }) {
-  const bg = {
-    indigo: "from-indigo-500 to-violet-600",
-    blue: "from-blue-500 to-cyan-500",
-    emerald: "from-emerald-500 to-teal-600",
-    violet: "from-violet-500 to-fuchsia-600",
+  const accent = {
+    indigo: "border-t-slate-400",
+    blue: "border-t-blue-700",
+    emerald: "border-t-emerald-700",
+    violet: "border-t-[#b45e42]",
   }[tone];
   return (
-    <div className="card p-4">
-      <div className={`mb-2 h-1.5 w-10 rounded-full bg-gradient-to-r ${bg}`} />
-      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{label}</div>
-      <div className="mt-1 text-2xl font-black text-slate-900">{value}</div>
+    <div className={`card border-t-2 p-4 ${accent}`}>
+      <div className="text-xs font-medium text-slate-600">{label}</div>
+      <div className="mt-2 text-2xl font-semibold tabular-nums text-slate-900">{value}</div>
     </div>
   );
 }

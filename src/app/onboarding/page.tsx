@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, ArrowRight, Check, Pill, Store } from "lucide-react";
 import { createMerchant } from "@/lib/actions";
 
 export default function OnboardingPage() {
@@ -83,44 +84,42 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 py-12">
+    <div className="page-enter min-h-screen bg-[#f4f6f3] py-8 sm:py-12">
       <div className="mx-auto max-w-2xl px-4">
         {/* Header */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-black text-slate-900">Create Your Store</h1>
-          <p className="mt-2 text-sm text-slate-600">
-            Set up your Kirana or Medical shop on OmniShelf AI
+        <div className="mb-7">
+          <p className="text-xs font-semibold uppercase text-emerald-800">Merchant onboarding</p>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Set up your store</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Add your store details to create a workspace on OmniShelf.
           </p>
         </div>
 
         {/* Progress Steps */}
-        <div className="mb-8 flex items-center justify-between">
-          {[1, 2, 3].map((s) => (
-            <div key={s} className="flex flex-1 items-center">
-              <div
-                className={`flex h-10 w-10 items-center justify-center rounded-full text-sm font-bold ${
-                  s < step
-                    ? "bg-emerald-500 text-white"
-                    : s === step
-                    ? "bg-slate-900 text-white"
-                    : "bg-slate-200 text-slate-500"
-                }`}
-              >
-                {s < step ? "✓" : s}
-              </div>
-              {s < 3 && (
-                <div
-                  className={`mx-2 h-1 flex-1 ${
-                    s < step ? "bg-emerald-500" : "bg-slate-200"
-                  }`}
-                />
-              )}
-            </div>
-          ))}
+        <div className="mb-5 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="mb-2 flex items-center justify-between text-xs font-medium text-slate-600">
+            <span>Step {step} of 3</span>
+            <span>{step === 1 ? "Store details" : step === 2 ? "Location and contact" : "License and review"}</span>
+          </div>
+          <div
+            role="progressbar"
+            aria-label="Onboarding progress"
+            aria-valuemin={1}
+            aria-valuemax={3}
+            aria-valuenow={step}
+            className="h-1.5 overflow-hidden rounded-full bg-slate-100"
+          >
+            <div className="h-full rounded-full bg-emerald-800 transition-[width] duration-200" style={{ width: `${(step / 3) * 100}%` }} />
+          </div>
+          <div className="mt-3 grid grid-cols-3 text-[11px] font-medium text-slate-500">
+            <span className={step === 1 ? "text-emerald-800" : ""}>Store</span>
+            <span className={`text-center ${step === 2 ? "text-emerald-800" : ""}`}>Contact</span>
+            <span className={`text-right ${step === 3 ? "text-emerald-800" : ""}`}>Verification</span>
+          </div>
         </div>
 
         {/* Form Card */}
-        <div className="card p-6">
+        <div className="card p-4 sm:p-6">
           {/* Step 1: Basic Info */}
           {step === 1 && (
             <div className="space-y-4">
@@ -147,14 +146,15 @@ export default function OnboardingPage() {
                   <button
                     type="button"
                     onClick={() => updateField("storeType", "KIRANA")}
-                    className={`rounded-xl border-2 p-4 text-left ${
+                    aria-pressed={formData.storeType === "KIRANA"}
+                    className={`rounded-md border p-4 text-left transition-colors ${
                       formData.storeType === "KIRANA"
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200"
+                        ? "border-emerald-700 bg-emerald-50"
+                        : "border-slate-200 hover:bg-slate-50"
                     }`}
                   >
-                    <div className="text-2xl">🛒</div>
-                    <div className="mt-2 font-bold">Kirana / Grocery</div>
+                    <Store aria-hidden="true" size={22} className="text-emerald-800" />
+                    <div className="mt-3 font-semibold text-slate-900">Grocery store</div>
                     <div className="text-xs text-slate-600">
                       FMCG, perishables, staples
                     </div>
@@ -162,15 +162,16 @@ export default function OnboardingPage() {
                   <button
                     type="button"
                     onClick={() => updateField("storeType", "MEDICAL")}
-                    className={`rounded-xl border-2 p-4 text-left ${
+                    aria-pressed={formData.storeType === "MEDICAL"}
+                    className={`rounded-md border p-4 text-left transition-colors ${
                       formData.storeType === "MEDICAL"
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200"
+                        ? "border-emerald-700 bg-emerald-50"
+                        : "border-slate-200 hover:bg-slate-50"
                     }`}
                   >
-                    <div className="text-2xl">💊</div>
-                    <div className="mt-2 font-bold">Medical / Pharmacy</div>
-                    <div className="text-xs text-slate-600">OTC + Rx drugs</div>
+                    <Pill aria-hidden="true" size={22} className="text-emerald-800" />
+                    <div className="mt-3 font-semibold text-slate-900">Pharmacy</div>
+                    <div className="text-xs text-slate-600">Over-the-counter and prescription inventory</div>
                   </button>
                 </div>
               </div>
@@ -299,36 +300,36 @@ export default function OnboardingPage() {
           )}
 
           {/* Navigation */}
-          <div className="mt-6 flex justify-between">
+          <div className="mt-6 flex justify-between border-t border-slate-100 pt-4">
             <button
               onClick={() => setStep(Math.max(1, step - 1))}
               disabled={step === 1 || submitting}
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-40"
+              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
             >
-              ← Back
+              <ArrowLeft aria-hidden="true" size={16} /> Back
             </button>
 
             {step < 3 ? (
               <button
                 onClick={() => setStep(step + 1)}
                 disabled={!canProceed[step as keyof typeof canProceed]}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                className="inline-flex min-h-10 items-center gap-2 rounded-md bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-40"
               >
-                Continue →
+                Continue <ArrowRight aria-hidden="true" size={16} />
               </button>
             ) : (
               <button
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                className="inline-flex min-h-10 items-center gap-2 rounded-md bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-40"
               >
-                {submitting ? "Creating..." : "Create Store ✓"}
+                {submitting ? "Creating…" : "Create store"}
               </button>
             )}
           </div>
 
           {error && (
-            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <div role="alert" className="mt-4 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
               {error}
             </div>
           )}

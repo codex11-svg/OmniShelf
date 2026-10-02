@@ -3,9 +3,15 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Bell, Boxes, CreditCard, FileBarChart,
+  LayoutDashboard, ScanLine, Settings, ShoppingBag, StickyNote, Tag,
+  TrendingUp, Truck, Users,
+} from "lucide-react";
+import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { WorkspaceTabs } from "@/components/WorkspaceTabs";
 import { useCurrentTime } from "@/lib/useCurrentTime";
 import { formatDate, formatDateTime } from "@/lib/formatDate";
 import {
@@ -165,19 +171,19 @@ type Props = {
 };
 
 const TABS = [
-  { id: "overview", label: "Overview", icon: "📈", ownerOnly: false },
-  { id: "inventory", label: "Inventory", icon: "📦", ownerOnly: false },
-  { id: "scanner", label: "Real Scanner", icon: "📷", ownerOnly: false },
-  { id: "orders", label: "Orders", icon: "🛍️", ownerOnly: true },
-  { id: "pos", label: "Quick POS", icon: "💳", ownerOnly: false },
-  { id: "clearance", label: "Clearance Control", icon: "🏷️", ownerOnly: true },
-  { id: "predict", label: "What to Order Next", icon: "🔮", ownerOnly: true },
-  { id: "suppliers", label: "Suppliers & POs", icon: "🚚", ownerOnly: true },
-  { id: "notifications", label: "Notifications", icon: "🔔", ownerOnly: true },
-  { id: "reports", label: "Reports & Returns", icon: "📑", ownerOnly: true },
-  { id: "notes", label: "Team Notes", icon: "📝", ownerOnly: false },
-  { id: "staff", label: "Staff & RBAC", icon: "👥", ownerOnly: true },
-  { id: "settings", label: "Store Settings", icon: "⚙️", ownerOnly: true },
+  { id: "overview", label: "Overview", icon: LayoutDashboard, ownerOnly: false },
+  { id: "inventory", label: "Inventory", icon: Boxes, ownerOnly: false },
+  { id: "scanner", label: "Scanner", icon: ScanLine, ownerOnly: false },
+  { id: "orders", label: "Orders", icon: ShoppingBag, ownerOnly: true },
+  { id: "pos", label: "Point of sale", icon: CreditCard, ownerOnly: false },
+  { id: "clearance", label: "Clearance", icon: Tag, ownerOnly: true },
+  { id: "predict", label: "Procurement", icon: TrendingUp, ownerOnly: true },
+  { id: "suppliers", label: "Suppliers & POs", icon: Truck, ownerOnly: true },
+  { id: "notifications", label: "Notifications", icon: Bell, ownerOnly: true },
+  { id: "reports", label: "Reports & returns", icon: FileBarChart, ownerOnly: true },
+  { id: "notes", label: "Team notes", icon: StickyNote, ownerOnly: false },
+  { id: "staff", label: "Staff & access", icon: Users, ownerOnly: true },
+  { id: "settings", label: "Store settings", icon: Settings, ownerOnly: true },
 ] as const;
 
 export function VendorTabs(props: Props) {
@@ -195,32 +201,22 @@ export function VendorTabs(props: Props) {
   return (
     <div className="mt-8">
       {expiringSoon > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
-          <span className="text-base">⏰</span>
+        <div className="mb-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          <span aria-hidden="true">!</span>
           {expiringSoon} items expiring within 30 days
         </div>
       )}
-      <div className="mb-4 flex flex-wrap gap-1 overflow-auto rounded-2xl border border-slate-200 bg-white p-1.5">
-        {visibleTabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex flex-shrink-0 items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-              tab === t.id ? "bg-slate-900 text-white shadow" : "text-slate-600 hover:bg-slate-100"
-            }`}
-          >
-            <span>{t.icon}</span>
-            {t.label}
-            {t.ownerOnly && isOwner && (
-              <span className="ml-1 rounded-full bg-amber-400/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-200">
-                Owner
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      <div>
+      <WorkspaceTabs
+        value={tab}
+        onValueChange={setTab}
+        ariaLabel="Store console sections"
+        tabs={visibleTabs.map(({ id, label, icon, ownerOnly }) => ({
+          id,
+          label,
+          icon,
+          badge: ownerOnly ? "Owner" : undefined,
+        }))}
+      >
         {tab === "overview" && (
           <OverviewTab
             series={props.series}
@@ -260,7 +256,7 @@ export function VendorTabs(props: Props) {
         {tab === "settings" && isOwner && (
           <SettingsTab settings={props.storeSettings} merchantType={props.merchantType} />
         )}
-      </div>
+      </WorkspaceTabs>
     </div>
   );
 }
@@ -1003,16 +999,25 @@ function StaffTab({ staff, apiKeys }: { staff: Staff[]; apiKeys: ApiKey[] }) {
 
 function StaffRow({ s }: { s: Staff }) {
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   async function handleRemove() {
-    if (!confirm(`Remove ${s.name}?`)) return;
     setBusy(true);
-    await removeStaff(s.id);
-    setBusy(false);
+    setConfirming(false);
+    setError(null);
+    try {
+      await removeStaff(s.id);
+    } catch {
+      setError("Could not remove this team member. Try again.");
+    } finally {
+      setBusy(false);
+    }
   }
   const accessLabel =
     s.accessLevel === "SCAN_ONLY" ? "Scan-only" : s.accessLevel === "BILLING" ? "Billing" : "Full";
   return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+    <div className="rounded-md border border-slate-200 bg-white p-3">
+      <div className="flex items-center justify-between gap-3">
       <div>
         <div className="flex items-center gap-2">
           <span className="font-semibold text-slate-900">{s.name}</span>
@@ -1024,12 +1029,23 @@ function StaffRow({ s }: { s: Staff }) {
         <div className="text-xs text-slate-500">{s.phone}</div>
       </div>
       <button
-        onClick={handleRemove}
+        onClick={() => setConfirming((value) => !value)}
         disabled={busy}
-        className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+        className="rounded-md border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-800 hover:bg-rose-50 disabled:opacity-60"
       >
-        Remove
+        {busy ? "Removing…" : "Remove"}
       </button>
+      </div>
+      {confirming && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <p className="text-xs text-slate-700">Remove {s.name} from this store?</p>
+          <div className="flex gap-2">
+            <button onClick={() => setConfirming(false)} className="rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+            <button onClick={handleRemove} disabled={busy} className="rounded-md bg-rose-700 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-800 disabled:opacity-50">Confirm removal</button>
+          </div>
+        </div>
+      )}
+      {error && <p role="alert" className="mt-2 text-xs text-rose-800">{error}</p>}
     </div>
   );
 }

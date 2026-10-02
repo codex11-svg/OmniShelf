@@ -17,40 +17,47 @@ export function AdminCompliancePanel({ switches }: { switches: SwitchRow[] }) {
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
-      <SwitchGroup title="🛒 Kirana compliance" tone="blue" rows={kirana} />
-      <SwitchGroup title="💊 Medical / Pharmacy compliance" tone="rose" rows={medical} />
+      <SwitchGroup title="Grocery compliance" tone="blue" rows={kirana} />
+      <SwitchGroup title="Pharmacy compliance" tone="rose" rows={medical} />
     </div>
   );
 }
 
 function SwitchGroup({ title, tone, rows }: { title: string; tone: "blue" | "rose"; rows: SwitchRow[] }) {
   return (
-    <div className="card p-5">
+    <section className="card p-5">
       <div className="mb-3 flex items-center gap-2">
         <span className={`chip ${tone === "blue" ? "bg-blue-100 text-blue-700" : "bg-rose-100 text-rose-700"}`}>
           {tone.toUpperCase()}
         </span>
-        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">{title}</h3>
+        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
       </div>
       <div className="space-y-2">
         {rows.map((r) => (
           <SwitchRow key={r.id} row={r} />
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
 function SwitchRow({ row }: { row: SwitchRow }) {
   const [enabled, setEnabled] = useState(row.enabled);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function flip() {
     setBusy(true);
+    setError(null);
     const next = !enabled;
-    setEnabled(next);
-    await toggleCompliance(row.id, next);
-    setBusy(false);
+    try {
+      await toggleCompliance(row.id, next);
+      setEnabled(next);
+    } catch {
+      setError("Could not save this setting.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   const prettyKey = row.key
@@ -58,15 +65,19 @@ function SwitchRow({ row }: { row: SwitchRow }) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+    <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-slate-50/60 p-3">
       <div>
         <div className="text-sm font-semibold text-slate-900">{prettyKey}</div>
         <div className="text-xs text-slate-600">{row.description}</div>
+        {error && <p role="alert" className="mt-1 text-xs font-medium text-rose-700">{error}</p>}
       </div>
       <button
         onClick={flip}
         disabled={busy}
-        className={`relative h-6 w-11 flex-shrink-0 rounded-full transition ${enabled ? "bg-emerald-500" : "bg-slate-300"}`}
+        role="switch"
+        aria-checked={enabled}
+        aria-busy={busy}
+        className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors duration-150 ${enabled ? "bg-emerald-700" : "bg-slate-400"} disabled:cursor-wait`}
         aria-label={`Toggle ${row.key}`}
       >
         <span

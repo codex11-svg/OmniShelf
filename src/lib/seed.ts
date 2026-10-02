@@ -9,7 +9,6 @@ import {
   regionalTickers,
   predictionCache,
   inferenceLogs,
-  otpSessions,
   notificationRules,
   auditLogs,
   announcements,
@@ -111,11 +110,11 @@ export async function seedIfEmpty() {
 
   // --------- Users ---------
   const userList = [
-    { id: "u_admin_01", name: "OmniShelf Platform Admin", phone: "+919000000001", role: "ADMIN" as const, merchantId: null, accessLevel: "FULL" as const, passkeyEnabled: true },
-    { id: "u_owner_01", name: "Rajesh Sharma", phone: "+919811100001", role: "VENDOR_OWNER" as const, merchantId: "m_kirana_01", accessLevel: "FULL" as const, passkeyEnabled: true },
-    { id: "u_clerk_01", name: "Suresh (Clerk)", phone: "+919811100011", role: "VENDOR_CLERK" as const, merchantId: "m_kirana_01", accessLevel: "SCAN_ONLY" as const, passkeyEnabled: false },
-    { id: "u_owner_02", name: "Dr. Anil Kulkarni", phone: "+919811100003", role: "VENDOR_OWNER" as const, merchantId: "m_medical_01", accessLevel: "FULL" as const, passkeyEnabled: true },
-    { id: "u_owner_pending", name: "Sana Khan", phone: "+919811100004", role: "VENDOR_OWNER" as const, merchantId: "m_pending_01", accessLevel: "FULL" as const, passkeyEnabled: false },
+    { id: "u_admin_01", name: "OmniShelf Platform Admin", email: "admin@omnishelf.ai", phone: "+919000000001", role: "ADMIN" as const, merchantId: null, accessLevel: "FULL" as const, passkeyEnabled: true },
+    { id: "u_owner_01", name: "Rajesh Sharma", email: "rajesh@sharmastore.in", phone: "+919811100001", role: "VENDOR_OWNER" as const, merchantId: "m_kirana_01", accessLevel: "FULL" as const, passkeyEnabled: true },
+    { id: "u_clerk_01", name: "Suresh (Clerk)", email: "suresh@sharmastore.in", phone: "+919811100011", role: "VENDOR_CLERK" as const, merchantId: "m_kirana_01", accessLevel: "SCAN_ONLY" as const, passkeyEnabled: false },
+    { id: "u_owner_02", name: "Dr. Anil Kulkarni", email: "anil@arogyapharmacy.in", phone: "+919811100003", role: "VENDOR_OWNER" as const, merchantId: "m_medical_01", accessLevel: "FULL" as const, passkeyEnabled: true },
+    { id: "u_owner_pending", name: "Sana Khan", email: "sana@wellnessmedicals.in", phone: "+919811100004", role: "VENDOR_OWNER" as const, merchantId: "m_pending_01", accessLevel: "FULL" as const, passkeyEnabled: false },
   ];
   for (const u of userList) await db.insert(users).values(u);
 
@@ -514,7 +513,6 @@ export async function resetAndSeed() {
   await db.delete(platformLedger);
   await db.delete(regionalTickers);
   await db.delete(complianceSwitches);
-  await db.delete(otpSessions);
   await db.delete(users);
   await db.delete(merchants);
   await seedIfEmpty();
