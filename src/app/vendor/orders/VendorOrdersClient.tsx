@@ -82,7 +82,7 @@ export function VendorOrdersClient({ orders, canManage }: { orders: Order[]; can
             onClick={() => setFilter(key)}
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
               filter === key
-                ? "bg-slate-900 text-white"
+                ? "bg-emerald-800 text-white"
                 : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
             }`}
           >

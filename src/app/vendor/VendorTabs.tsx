@@ -10,7 +10,7 @@ import {
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
-import { BarcodeScanner } from "@/components/BarcodeScanner";
+import { BarcodeScanner, type ParsedBatchLabel } from "@/components/BarcodeScanner";
 import { WorkspaceTabs } from "@/components/WorkspaceTabs";
 import { useCurrentTime } from "@/lib/useCurrentTime";
 import { formatDate, formatDateTime } from "@/lib/formatDate";
@@ -475,7 +475,7 @@ function InventoryTab({ products, merchantType, currentTime, canAdjustStock }: {
               />
               <button
                 onClick={handleScan}
-                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900"
               >
                 Scan
               </button>
@@ -880,7 +880,7 @@ function PredictTab({ predictions, merchantType, currentTime }: { predictions: P
               <button
                 onClick={() => draftPurchaseOrder(p)}
                 disabled={draftingId !== null || !p.productName}
-                className="mt-3 w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                className="mt-3 w-full rounded-lg bg-emerald-800 py-2 text-xs font-semibold text-white hover:bg-emerald-900 disabled:opacity-50"
               >
                 {draftingId === p.id ? "Creating draft..." : `Draft PO for ${p.forecastQty} units →`}
               </button>
@@ -971,7 +971,7 @@ function StaffTab({ staff, apiKeys }: { staff: Staff[]; apiKeys: ApiKey[] }) {
             <button
               onClick={handleAdd}
               disabled={busy}
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              className="rounded-lg bg-emerald-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
             >
               {busy ? "Adding…" : "Invite clerk"}
             </button>
@@ -1326,7 +1326,7 @@ function NotificationsTab({ rules }: { rules: NotificationRule[] }) {
           <button
             onClick={handleAdd}
             disabled={busy}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+            className="rounded-lg bg-emerald-800 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
           >
             {busy ? "Creating…" : "Create alert rule"}
           </button>
@@ -1540,7 +1540,7 @@ function NotesTab({ notes, isOwner }: { notes: Note[]; isOwner: boolean }) {
             <button
               onClick={add}
               disabled={busy}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              className="rounded-lg bg-emerald-800 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
             >
               {busy ? "Saving…" : "Save note"}
             </button>
@@ -1645,7 +1645,7 @@ function SettingsTab({ settings, merchantType }: { settings: StoreSettingsRow; m
         <button
           onClick={save}
           disabled={busy}
-          className="rounded-lg bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+          className="rounded-lg bg-emerald-800 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
         >
           {busy ? "Saving…" : "Save settings"}
         </button>
@@ -1731,25 +1731,43 @@ function RealScannerTab({ merchantType, products, canAddInventory, active }: { m
     setBusy(false);
   }
 
+  function handleBatchOcr(batch: ParsedBatchLabel) {
+    setDraft((prev) => ({
+      ...prev,
+      mrp: batch.mrp ? String(batch.mrp) : prev.mrp,
+      batchNumber: batch.batchNumber || prev.batchNumber,
+      expiryDate: batch.expiryDate || prev.expiryDate,
+      brand: batch.brand || prev.brand,
+    }));
+    setAddFormOpen(true);
+  }
+
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4 text-sm text-emerald-900">
-        <b>📷 Real Barcode Scanner.</b> Uses your device camera with html5-qrcode.
-        Scans EAN/UPC barcodes on FMCG products, then looks up details from our
-        inventory or Open Food Facts public database.
+      <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 text-sm text-emerald-950">
+        <strong className="font-semibold text-emerald-900">📷 Hybrid Scanner Workflow:</strong>
+        <span className="ml-1 text-emerald-800">
+          Use <strong>Barcode (EAN-13)</strong> to identify products instantly from Open Food Facts or your catalog,
+          then use <strong>Batch & Expiry OCR</strong> to scan packaging date/batch blocks (MRP, batch code, expiry) without typing.
+        </span>
       </div>
 
       <div className="card p-4">
         <div className="mb-3">
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-            {merchantType === "MEDICAL" ? "Scan medicine barcode" : "Scan product barcode"}
+            {merchantType === "MEDICAL" ? "Scan medicine or batch stamp" : "Scan product barcode or batch stamp"}
           </h3>
           <p className="mt-1 text-xs text-slate-500">
-            Point your camera at the barcode. Make sure it&apos;s well-lit.
+            Switch modes below to toggle between 13-digit EAN barcode reading and packaging label OCR.
           </p>
         </div>
 
-        <BarcodeScanner onScan={handleScan} compact={false} active={active} />
+        <BarcodeScanner
+          onScan={handleScan}
+          onBatchOcr={handleBatchOcr}
+          compact={false}
+          active={active}
+        />
       </div>
 
       {busy && (
@@ -1824,7 +1842,7 @@ function RealScannerTab({ merchantType, products, canAddInventory, active }: { m
             </button>
           )}
           {lookupResult.source === "notfound" && (
-            <button onClick={() => startAddProduct({ barcode: lookupResult.data.barcode })} className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">
+            <button onClick={() => startAddProduct({ barcode: lookupResult.data.barcode })} className="mt-3 rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white">
               + Add product manually
             </button>
           )}

@@ -1586,17 +1586,29 @@ export async function createMerchant(data: {
             merchantId,
             role: "VENDOR_OWNER",
             name: data.ownerName.trim(),
+            phone: existingUser.phone || phone,
           })
           .where(eq(users.id, existingUser.id));
       } else {
-        await tx.insert(users).values({
-          id: userId,
-          name: data.ownerName.trim(),
-          phone,
-          role: "VENDOR_OWNER",
-          merchantId,
-          accessLevel: "FULL",
-        });
+        await tx
+          .insert(users)
+          .values({
+            id: userId,
+            name: data.ownerName.trim(),
+            phone,
+            role: "VENDOR_OWNER",
+            merchantId,
+            accessLevel: "FULL",
+          })
+          .onConflictDoUpdate({
+            target: users.id,
+            set: {
+              merchantId,
+              role: "VENDOR_OWNER",
+              name: data.ownerName.trim(),
+              phone,
+            },
+          });
       }
 
       // 3. Create default store settings

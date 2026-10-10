@@ -106,7 +106,7 @@ export function AdminOnboardingPanel() {
         {STEPS.map((item, index) => (
           <div key={item.id} className="flex flex-1 items-center">
             <div className="flex flex-col items-center">
-              <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${index < step ? "bg-emerald-500 text-white" : index === step ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-500"}`}>
+              <div className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${index < step ? "bg-emerald-500 text-white" : index === step ? "bg-emerald-800 text-white" : "bg-slate-100 text-slate-500"}`}>
                 {index < step ? "✓" : index + 1}
               </div>
               <div className={`mt-1 text-[10px] font-semibold ${index <= step ? "text-slate-900" : "text-slate-500"}`}>
@@ -218,7 +218,7 @@ export function AdminOnboardingPanel() {
             <button
               onClick={() => setStep(step + 1)}
               disabled={!canAdvance || submitting}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="rounded-lg bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             >
               Continue →
             </button>

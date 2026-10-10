@@ -52,7 +52,7 @@ export function AdminTicketsPanel({ tickets }: { tickets: Ticket[] }) {
         <button
           onClick={() => setFilter("all")}
           aria-pressed={filter === "all"}
-          className={`card p-3 text-left ${filter === "all" ? "ring-2 ring-slate-900" : ""}`}
+          className={`card p-3 text-left ${filter === "all" ? "ring-2 ring-emerald-800" : ""}`}
         >
           <div className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total</div>
           <div className="text-2xl font-black text-slate-900">{tickets.length}</div>

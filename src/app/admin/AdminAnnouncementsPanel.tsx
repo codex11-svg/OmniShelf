@@ -94,7 +94,7 @@ export function AdminAnnouncementsPanel({ announcements }: { announcements: Anno
             <button
               onClick={handleCreate}
               disabled={busy}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              className="rounded-lg bg-emerald-800 px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
             >
               {busy ? "Broadcasting…" : "Broadcast to vendors"}
             </button>

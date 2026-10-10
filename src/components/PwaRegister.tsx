@@ -56,8 +56,8 @@ export function PwaRegister() {
   return (
     <>
       {!isOnline && (
-        <div role="status" className="fixed inset-x-3 bottom-3 z-[60] mx-auto flex max-w-xl items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-lg sm:inset-x-6">
-          <WifiOff aria-hidden="true" size={17} className="shrink-0 text-amber-300" />
+        <div role="status" className="fixed inset-x-3 bottom-3 z-[60] mx-auto flex max-w-xl items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900 shadow-lg sm:inset-x-6">
+          <WifiOff aria-hidden="true" size={17} className="shrink-0 text-amber-600" />
           Offline. Changes will sync when your connection returns.
         </div>
       )}

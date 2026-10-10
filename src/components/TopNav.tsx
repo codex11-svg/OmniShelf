@@ -7,15 +7,15 @@ import { PwaRegister } from "@/components/PwaRegister";
 export async function TopNav() {
   const session = await getSession();
   return (
-    <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-800 text-white">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-800 to-emerald-700 text-white shadow-sm shadow-emerald-900/20">
             <Store aria-hidden="true" size={18} strokeWidth={1.8} />
           </span>
           <div>
             <div className="text-sm font-bold text-slate-900">OmniShelf</div>
-            <div className="-mt-0.5 hidden text-[10px] font-medium uppercase tracking-wider text-slate-500 sm:block">
+            <div className="-mt-0.5 hidden text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500 sm:block">
               STORE MANAGEMENT
             </div>
           </div>

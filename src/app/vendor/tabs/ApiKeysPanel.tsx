@@ -193,7 +193,7 @@ export function ApiKeysPanel({ apiKeys }: Props) {
             <button
               type="submit"
               disabled={busy}
-              className="w-full rounded-lg bg-slate-900 py-2 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              className="w-full rounded-lg bg-emerald-800 py-2 text-xs font-semibold text-white hover:bg-emerald-900 disabled:opacity-60"
             >
               {busy ? "Generating…" : "Generate key"}
             </button>
