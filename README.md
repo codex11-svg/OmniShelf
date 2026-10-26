@@ -21,7 +21,10 @@ A unified platform for Kirana grocers and Medical pharmacies — unifying the **
 - **RBAC roles** — Owner (full) vs Clerk (scan/billing only)
 - **Dashboard** — sales velocity, top sellers, activity feed, announcements banner
 - **Inventory & Barcode Scanner** — camera-first mock, stock adjustments
-- **Quick POS** — full cart, tax calc, checkout flow
+- **Quick POS** — full cart, tax calc, checkout flow, payment modes (Cash/UPI/Card/Credit)
+- **Held bills** — park a bill mid-sale and serve the next customer; resume re-checks stock
+- **Printed receipts** — thermal-ready 80mm/58mm/A4 bills with barcode, batch & expiry lines, exact reprints
+- **Offline counter** — bills taken offline queue on the device and sync exactly once when the connection returns
 - **Clearance Control** — time-decay with admin compliance guardrails (Schedule H/X hard-blocked)
 - **Predictive Procurement** — ML-style "What to Order Next" with confidence + reasoning
 - **Suppliers & Purchase Orders** — supplier directory + PO tracking
@@ -92,7 +95,10 @@ OmniShelf includes a web app manifest, install icons, and a service worker. In a
 supported browser, open the app over HTTPS (or `localhost`) and use the browser's
 install option; browsers that expose an install prompt also show an **Install app**
 button in the top navigation. When offline, the app displays a reconnect screen
-instead of caching private store pages or API responses.
+instead of caching private store pages or API responses. One exception: bills taken
+at the counter in an already-open tab are saved on the device (IndexedDB outbox)
+and recorded automatically — exactly once, under an idempotency key — when the
+connection returns. Other screens remain read-only offline.
 
 Use **Sign up** or visit `/onboarding` to register a grocery or pharmacy store.
 New registrations are marked pending until KYC review. Existing account holders
@@ -134,6 +140,19 @@ Accounts seed automatically in local development. On production, demo seeding an
 | +919811100003 | VENDOR_OWNER | Arogya Pharmacy (Medical) |
 | +919811100011 | VENDOR_CLERK | Sharma General Store (Clerk) |
 | +919811100004 | VENDOR_OWNER | Wellness Medicals (Pending KYC) |
+
+## 🙏 Credits & inspiration
+
+The counter-side workflow in this project — held bills, printed thermal receipts,
+expiry-first stock thinking, and an offline-capable till — was informed by studying
+**[PharmaSpot](https://github.com/drkNsubuga/PharmaSpot)** by Patterns Digital
+(MIT), an offline-first pharmacy POS for desktop. OmniShelf covers different ground
+(cloud multi-tenancy, Postgres transactions, RBAC, Schedule H/H1/X compliance), but
+the counter ergonomics owe a debt to their practical feature set. No PharmaSpot code
+is included in this repository.
+
+Receipt barcodes are rendered with **[JsBarcode](https://github.com/lindell/JsBarcode)**
+(MIT).
 
 ## 📄 License
 
