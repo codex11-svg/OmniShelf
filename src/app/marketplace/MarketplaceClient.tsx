@@ -6,6 +6,7 @@ import { Clock3, Eye, Heart, MapPin, Package, Search, ShieldCheck, ShoppingCart,
 import { ConsumerCart } from "@/components/ConsumerCart";
 import { useCurrentTime } from "@/lib/useCurrentTime";
 import { formatDate } from "@/lib/formatDate";
+import { EXPIRY_CRITICAL_DAYS, daysToExpiry } from "@/lib/stock-status";
 
 type Item = {
   id: string;
@@ -437,10 +438,8 @@ function MarketplaceCard({
 }) {
   const mrp = parseFloat(String(item.mrp));
   const finalPrice = (mrp * (100 - item.clearanceDiscountPct)) / 100;
-  const days = item.expiryDate && currentTime !== null
-    ? Math.ceil((new Date(item.expiryDate).getTime() - currentTime) / 86400000)
-    : null;
-  const urgent = days !== null && days <= 7;
+  const days = currentTime === null ? null : daysToExpiry(item.expiryDate, currentTime);
+  const urgent = days !== null && days <= EXPIRY_CRITICAL_DAYS;
 
   return (
     <article className="marketplace-card overflow-hidden rounded-lg border border-slate-200 bg-white transition-shadow hover:shadow-md">

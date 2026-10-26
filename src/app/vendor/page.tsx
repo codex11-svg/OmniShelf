@@ -17,7 +17,11 @@ import {
   getMyStoreSettings,
   listMyApiKeys,
   listAnnouncements,
+  listMyHeldTabs,
+  listMyRecentSales,
+  getMyBillingConfig,
 } from "@/lib/actions";
+import { isLowStock } from "@/lib/stock-status";
 import { VendorTabs } from "./VendorTabs";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +38,7 @@ export default async function VendorPage() {
     products, predictions, series, topProducts, staff,
     suppliers, purchaseOrders, notificationRules, notes, returns,
     auditLogs, activityFeed, storeSettings, apiKeys, announcements,
+    heldTabs, recentSales, billingConfig,
   ] = await Promise.all([
     listMyProducts(),
     isOwner ? listMyPredictions() : Promise.resolve([]),
@@ -50,6 +55,10 @@ export default async function VendorPage() {
     isOwner ? getMyStoreSettings() : Promise.resolve(null),
     isOwner ? listMyApiKeys() : Promise.resolve([]),
     listAnnouncements(session.merchantType),
+    // The counter is shared: clerks park and complete bills too.
+    listMyHeldTabs(),
+    listMyRecentSales(),
+    getMyBillingConfig(),
   ]);
 
   // Compute some stats
@@ -60,7 +69,7 @@ export default async function VendorPage() {
     0
   );
   const onMarketplace = products.filter((p) => p.pushToMarketplace).length;
-  const lowStock = products.filter((p) => (p.quantity ?? 0) < (p.reorderThreshold ?? 10)).length;
+  const lowStock = products.filter((p) => isLowStock(p.quantity ?? 0, p.reorderThreshold ?? 10)).length;
 
   const last30Revenue = series.reduce((s, d) => s + d.revenue, 0);
   const last30Orders = series.reduce((s, d) => s + d.orders, 0);
@@ -138,6 +147,12 @@ export default async function VendorPage() {
         storeSettings={storeSettings}
         apiKeys={apiKeys}
         announcements={announcements}
+        heldTabs={heldTabs}
+        recentSales={recentSales}
+        storeId={session.merchantId ?? session.id}
+        taxRatePct={billingConfig.taxRatePct}
+        currency={billingConfig.currency}
+        canBill={isOwner || session.accessLevel !== "SCAN_ONLY"}
         isOwner={isOwner}
         merchantType={session.merchantType ?? "KIRANA"}
         sessionName={session.name}

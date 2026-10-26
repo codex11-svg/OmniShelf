@@ -39,6 +39,19 @@ export const staffAccessEnum = pgEnum("staff_access", [
   "FULL",
 ]);
 
+export const posTabStatusEnum = pgEnum("pos_tab_status", [
+  "HELD",
+  "COMPLETED",
+  "VOIDED",
+]);
+
+export const posPaymentModeEnum = pgEnum("pos_payment_mode", [
+  "CASH",
+  "UPI",
+  "CARD",
+  "CREDIT",
+]);
+
 // ---------- Merchants (stores) ----------
 export const merchants = pgTable(
   "merchants",
@@ -141,6 +154,80 @@ export const transactions = pgTable(
     index("transactions_merchant_idx").on(t.merchantId),
     index("transactions_created_idx").on(t.createdAt),
     index("transactions_product_idx").on(t.productId),
+  ]
+);
+
+// ---------- Held / parked POS tabs ----------
+// A bill the clerk parks mid-sale ("customer went back to the car"). Stock is NOT
+// reserved while a tab is held — quantities are re-checked atomically at checkout.
+export const posTabs = pgTable(
+  "pos_tabs",
+  {
+    id: text("id").primaryKey(),
+    merchantId: text("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+    refNumber: text("ref_number").notNull(), // short human reference, e.g. "TAB-4K2QX"
+    customerName: text("customer_name"),
+    customerPhone: text("customer_phone"),
+    note: text("note"),
+    items: jsonb("items").notNull(), // snapshot: HeldTabLine[]
+    itemCount: integer("item_count").notNull().default(0),
+    estimatedTotal: numeric("estimated_total", { precision: 10, scale: 2 }).notNull().default("0"),
+    status: posTabStatusEnum("status").notNull().default("HELD"),
+    heldBy: text("held_by").references(() => users.id),
+    heldByName: text("held_by_name").notNull(),
+    completedSaleId: text("completed_sale_id"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("pos_tabs_merchant_idx").on(t.merchantId),
+    index("pos_tabs_status_idx").on(t.status),
+    index("pos_tabs_created_idx").on(t.createdAt),
+  ]
+);
+
+// ---------- POS sale receipts ----------
+// Header row for every completed counter sale. Holds a price snapshot so a bill can
+// be reprinted exactly as it was issued, and carries the idempotency key that makes
+// offline-queued sales safe to replay.
+export const posSales = pgTable(
+  "pos_sales",
+  {
+    id: text("id").primaryKey(), // receipt id
+    merchantId: text("merchant_id")
+      .notNull()
+      .references(() => merchants.id),
+    refNumber: text("ref_number").notNull(), // printed reference, e.g. "R-8F3K2A"
+    idempotencyKey: text("idempotency_key"), // client-generated; replays return the original receipt
+    items: jsonb("items").notNull(), // snapshot: ReceiptLine[]
+    itemCount: integer("item_count").notNull().default(0),
+    subtotal: numeric("subtotal", { precision: 10, scale: 2 }).notNull(),
+    taxRatePct: numeric("tax_rate_pct", { precision: 5, scale: 2 }).notNull(),
+    taxAmount: numeric("tax_amount", { precision: 10, scale: 2 }).notNull(),
+    total: numeric("total", { precision: 10, scale: 2 }).notNull(),
+    currency: text("currency").notNull().default("INR"),
+    paymentMode: posPaymentModeEnum("payment_mode").notNull().default("CASH"),
+    paymentRef: text("payment_ref"), // UPI / card reference number
+    customerName: text("customer_name"),
+    customerPhone: text("customer_phone"),
+    patientName: text("patient_name"),
+    doctorName: text("doctor_name"),
+    prescriptionKey: text("prescription_key"),
+    posTabId: text("pos_tab_id"), // held tab this sale completed, if any
+    cashierId: text("cashier_id").references(() => users.id),
+    cashierName: text("cashier_name").notNull(),
+    queuedOffline: boolean("queued_offline").notNull().default(false),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("pos_sales_merchant_idx").on(t.merchantId),
+    index("pos_sales_created_idx").on(t.createdAt),
+    // Runtime-enforced: see completePosSale(), which takes a transaction-scoped advisory
+    // lock on the idempotency key. (Standalone unique indexes are avoided in this schema —
+    // see the complianceSwitches note below.)
+    index("pos_sales_idempotency_idx").on(t.idempotencyKey),
   ]
 );
 
