@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { activityFeed, merchants, notificationRules, predictionCache, products, transactions } from "@/db/schema";
+import { daysToExpiry, isLowStock } from "@/lib/stock-status";
 import { randomUUID } from "node:crypto";
 
 export const dynamic = "force-dynamic";
@@ -38,10 +39,14 @@ export async function GET(request: Request) {
       let message: string | null = null;
       if (rule.eventType === "LOW_STOCK") {
         const limit = rule.threshold ?? product.reorderThreshold;
-        if (product.quantity < limit) message = `${product.name}: ${product.quantity} units left (threshold ${limit}).`;
-      } else if (product.expiryDate && rule.threshold !== null) {
-        const daysLeft = Math.ceil((product.expiryDate.getTime() - now.getTime()) / 86400000);
-        if (daysLeft >= 0 && daysLeft <= rule.threshold) message = `${product.name} expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`;
+        if (isLowStock(product.quantity, limit)) {
+          message = `${product.name}: ${product.quantity} units left (threshold ${limit}).`;
+        }
+      } else if (rule.threshold !== null) {
+        const daysLeft = daysToExpiry(product.expiryDate, now.getTime());
+        if (daysLeft !== null && daysLeft > 0 && daysLeft <= rule.threshold) {
+          message = `${product.name} expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}.`;
+        }
       }
       if (!message) continue;
 

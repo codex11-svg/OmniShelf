@@ -36,6 +36,19 @@ export const createMerchantForAdminInputSchema = z.object({
   notes: z.string().trim().max(2000).optional(),
 });
 
+const paymentMode = z.enum(["CASH", "UPI", "CARD", "CREDIT"]);
+
+// Client-generated key so a bill queued offline and replayed later is only ever
+// recorded once. See completePosSale().
+const idempotencyKey = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9_-]{16,64}$/)
+  .optional();
+
+const customerName = z.string().trim().max(120).optional();
+const customerPhone = z.string().trim().max(18).optional();
+
 export const posSaleInputSchema = z.object({
   items: z.array(z.object({
     productId: identifier,
@@ -44,6 +57,23 @@ export const posSaleInputSchema = z.object({
   patientName: z.string().trim().max(120).optional(),
   doctorName: z.string().trim().max(120).optional(),
   prescriptionKey: z.string().trim().max(512).optional(),
+  paymentMode: paymentMode.default("CASH"),
+  paymentRef: z.string().trim().max(64).optional(),
+  customerName,
+  customerPhone,
+  heldTabId: identifier.optional(),
+  idempotencyKey,
+  queuedOffline: z.boolean().optional(),
+});
+
+export const holdPosTabInputSchema = z.object({
+  items: z.array(z.object({
+    productId: identifier,
+    quantity: z.number().int().min(1).max(1_000_000),
+  })).min(1).max(100),
+  customerName,
+  customerPhone,
+  note: z.string().trim().max(500).optional(),
 });
 
 const productFields = {

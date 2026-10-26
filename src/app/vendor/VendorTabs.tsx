@@ -14,19 +14,21 @@ import { BarcodeScanner, type ParsedBatchLabel } from "@/components/BarcodeScann
 import { WorkspaceTabs } from "@/components/WorkspaceTabs";
 import { useCurrentTime } from "@/lib/useCurrentTime";
 import { formatDate, formatDateTime } from "@/lib/formatDate";
+import { EXPIRY_WARNING_DAYS, daysToExpiry, isExpiringSoon, isLowStock } from "@/lib/stock-status";
 import {
   updateProductClearance,
   updateStock,
   scanBarcode,
   addStaff,
   removeStaff,
-  completePosSale,
   addInventoryProduct,
   createPurchaseOrder,
 } from "@/lib/actions";
 import type { products } from "@/db/schema";
+import type { HeldTab, RecentSale } from "@/lib/pos-types";
 import { SuppliersTab } from "./tabs/SuppliersTab";
 import { ApiKeysPanel } from "./tabs/ApiKeysPanel";
+import { PosTab } from "./tabs/PosTab";
 
 type Product = typeof products.$inferSelect;
 type SeriesPoint = { day: string; revenue: number; orders: number; units: number };
@@ -165,6 +167,12 @@ type Props = {
   storeSettings: StoreSettingsRow;
   apiKeys: ApiKey[];
   announcements: Announcement[];
+  heldTabs: HeldTab[];
+  recentSales: RecentSale[];
+  storeId: string;
+  taxRatePct: number;
+  currency: string;
+  canBill: boolean;
   isOwner: boolean;
   merchantType: "KIRANA" | "MEDICAL";
   sessionName: string;
@@ -190,11 +198,10 @@ export function VendorTabs(props: Props) {
   const { isOwner } = props;
   const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("overview");
   const currentTime = useCurrentTime();
-  const expiringSoon = currentTime === null ? 0 : props.products.filter((product) => {
-    if (!product.expiryDate) return false;
-    const days = (new Date(product.expiryDate).getTime() - currentTime) / 86400000;
-    return days <= 30 && days >= 0;
-  }).length;
+  const expiringSoon =
+    currentTime === null
+      ? 0
+      : props.products.filter((product) => isExpiringSoon(product.expiryDate, currentTime)).length;
 
   const visibleTabs = TABS.filter((t) => !t.ownerOnly || isOwner);
 
@@ -214,7 +221,12 @@ export function VendorTabs(props: Props) {
           id,
           label,
           icon,
-          badge: ownerOnly ? "Owner" : undefined,
+          badge:
+            id === "pos" && props.heldTabs.length > 0
+              ? `${props.heldTabs.length} held`
+              : ownerOnly
+                ? "Owner"
+                : undefined,
         }))}
       >
         {tab === "overview" && (
@@ -233,7 +245,18 @@ export function VendorTabs(props: Props) {
           <RealScannerTab merchantType={props.merchantType} products={props.products} canAddInventory={isOwner} active={tab === "scanner"} />
         </div>
         {tab === "orders" && <OrdersTab canManage={isOwner} />}
-        {tab === "pos" && <QuickPOSTab products={props.products} merchantType={props.merchantType} taxRatePct={Number(props.storeSettings?.taxRatePct ?? 5)} />}
+        {tab === "pos" && (
+          <PosTab
+            products={props.products}
+            merchantType={props.merchantType}
+            taxRatePct={props.taxRatePct}
+            currency={props.currency}
+            storeId={props.storeId}
+            heldTabs={props.heldTabs}
+            recentSales={props.recentSales}
+            canBill={props.canBill}
+          />
+        )}
         {tab === "clearance" && isOwner && (
           <ClearanceTab products={props.products} merchantType={props.merchantType} currentTime={currentTime} />
         )}
@@ -564,12 +587,10 @@ function ProductRow({ p, merchantType, currentTime, canAdjustStock }: { p: Produ
     setBusy(false);
   }
 
-  const daysToExpiry = p.expiryDate && currentTime !== null
-    ? Math.ceil((new Date(p.expiryDate).getTime() - currentTime) / 86400000)
-    : null;
-  const lowStock = p.quantity < p.reorderThreshold;
-  const expired = daysToExpiry !== null && daysToExpiry < 0;
-  const expiring = daysToExpiry !== null && daysToExpiry >= 0 && daysToExpiry <= 30;
+  const expiryDays = currentTime === null ? null : daysToExpiry(p.expiryDate, currentTime);
+  const lowStock = isLowStock(p.quantity, p.reorderThreshold);
+  const expired = expiryDays !== null && expiryDays <= 0;
+  const expiring = currentTime !== null && isExpiringSoon(p.expiryDate, currentTime);
 
   return (
     <tr className="hover:bg-slate-50">
@@ -583,9 +604,9 @@ function ProductRow({ p, merchantType, currentTime, canAdjustStock }: { p: Produ
         {p.expiryDate ? (
           <span className={expired ? "font-semibold text-rose-700" : expiring ? "font-semibold text-amber-700" : ""}>
             {formatDate(p.expiryDate)}
-            {daysToExpiry !== null && (
+            {expiryDays !== null && (
               <span className="ml-1 text-[10px]">
-                ({expired ? "expired" : `${daysToExpiry}d`})
+                ({expired ? "expired" : `${expiryDays}d`})
               </span>
             )}
           </span>
@@ -686,10 +707,8 @@ function ClearanceRow({ p, merchantType, currentTime }: { p: Product; merchantTy
   const [busy, setBusy] = useState(false);
   const [blockedReason, setBlockedReason] = useState<string | null>(null);
 
-  const daysToExpiry = p.expiryDate && currentTime !== null
-    ? Math.ceil((new Date(p.expiryDate).getTime() - currentTime) / 86400000)
-    : null;
-  const shouldSuggest = daysToExpiry !== null && daysToExpiry <= 30 && daysToExpiry >= 0;
+  const expiryDays = currentTime === null ? null : daysToExpiry(p.expiryDate, currentTime);
+  const shouldSuggest = currentTime !== null && isExpiringSoon(p.expiryDate, currentTime);
 
   async function save() {
     setBusy(true);
@@ -719,7 +738,7 @@ function ClearanceRow({ p, merchantType, currentTime }: { p: Product; merchantTy
               </span>
             )}
             {shouldSuggest && (
-              <span className="chip bg-amber-100 text-amber-700">⏰ Expiring in {daysToExpiry}d</span>
+              <span className="chip bg-amber-100 text-amber-700">⏰ Expiring in {expiryDays}d</span>
             )}
             {p.requiresPrescription && (
               <span className="chip bg-violet-100 text-violet-700">Rx required</span>
@@ -727,9 +746,9 @@ function ClearanceRow({ p, merchantType, currentTime }: { p: Product; merchantTy
           </div>
           <div className="mt-0.5 text-xs text-slate-500">
             Batch: {p.batchNumber ?? "—"} · MRP ₹{parseFloat(String(p.mrp)).toFixed(0)} · Stock: {p.quantity}
-            {daysToExpiry !== null && (
+            {expiryDays !== null && (
               <>
-                {" "}· Expires: {formatDate(p.expiryDate)} ({daysToExpiry}d)
+                {" "}· Expires: {formatDate(p.expiryDate)} ({expiryDays}d)
               </>
             )}
           </div>
@@ -826,10 +845,8 @@ function PredictTab({ predictions, merchantType, currentTime }: { predictions: P
           const stock = p.currentStock ?? 0;
           const threshold = p.reorderThreshold ?? 0;
           const ratio = threshold === 0 ? 0 : Math.min(100, (stock / threshold) * 100);
-          const low = stock < threshold;
-          const daysToExpiry = p.expiryDate && currentTime !== null
-            ? Math.ceil((new Date(p.expiryDate).getTime() - currentTime) / 86400000)
-            : null;
+          const low = isLowStock(stock, threshold);
+          const expiryDays = currentTime === null ? null : daysToExpiry(p.expiryDate, currentTime);
           return (
             <div key={p.id} className="card p-5">
               <div className="flex items-start justify-between gap-3">
@@ -872,9 +889,9 @@ function PredictTab({ predictions, merchantType, currentTime }: { predictions: P
                   />
                 </div>
               </div>
-              {daysToExpiry !== null && (
+              {expiryDays !== null && (
                 <div className="mt-2 text-[11px] text-slate-500">
-                  Batch expiry in <b className={daysToExpiry < 30 ? "text-amber-700" : "text-slate-700"}>{daysToExpiry}d</b>
+                  Batch expiry in <b className={expiryDays <= EXPIRY_WARNING_DAYS ? "text-amber-700" : "text-slate-700"}>{expiryDays}d</b>
                 </div>
               )}
               <button
@@ -1050,181 +1067,6 @@ function StaffRow({ s }: { s: Staff }) {
   );
 }
 
-// --------------------------------------------------
-// Quick POS
-// --------------------------------------------------
-type CartItem = Product & { cartQty: number };
-
-function QuickPOSTab({ products, merchantType, taxRatePct }: { products: Product[]; merchantType: "KIRANA" | "MEDICAL"; taxRatePct: number }) {
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [search, setSearch] = useState("");
-  const [receipt, setReceipt] = useState<string | null>(null);
-  const [patientName, setPatientName] = useState("");
-  const [doctorName, setDoctorName] = useState("");
-  const [prescriptionFile, setPrescriptionFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const filtered = products.filter((p) =>
-    (p.name + (p.brand ?? "") + (p.barcode ?? "")).toLowerCase().includes(search.toLowerCase())
-  );
-
-  function addToCart(p: Product) {
-    if (p.quantity < 1) return;
-    setCart((prev) => {
-      const existing = prev.find((c) => c.id === p.id);
-      if (existing) {
-        return prev.map((c) => c.id === p.id ? { ...c, cartQty: Math.min(p.quantity, c.cartQty + 1) } : c);
-      }
-      return [...prev, { ...p, cartQty: 1 }];
-    });
-  }
-
-  function updateQty(id: string, qty: number) {
-    setCart((prev) => prev.map((c) => c.id === id ? { ...c, cartQty: Math.max(0, qty) } : c).filter((c) => c.cartQty > 0));
-  }
-
-  const subtotal = cart.reduce((s, c) => s + parseFloat(String(c.mrp)) * c.cartQty, 0);
-  const tax = subtotal * taxRatePct / 100;
-  const total = subtotal + tax;
-  const regulatedItems = cart.filter((item) =>
-    item.scheduleClass === "SCHEDULE_H" || item.scheduleClass === "SCHEDULE_H1" ||
-    item.scheduleClass === "SCHEDULE_X" || item.requiresPrescription
-  );
-
-  async function checkout() {
-    if (cart.length === 0) return;
-    setBusy(true);
-    setError(null);
-    try {
-      let prescriptionKey: string | undefined;
-      if (regulatedItems.length > 0) {
-        if (!patientName.trim() || !doctorName.trim() || !prescriptionFile) {
-          setError("Patient name, doctor name, and prescription are required for scheduled medicines.");
-          return;
-        }
-        const form = new FormData();
-        form.append("file", prescriptionFile);
-        form.append("type", "prescription");
-        const response = await fetch("/api/upload", { method: "POST", body: form });
-        const upload = await response.json();
-        if (!response.ok || typeof upload.key !== "string") {
-          setError(upload.error ?? "Prescription upload failed.");
-          return;
-        }
-        prescriptionKey = upload.key;
-      }
-
-      const result = await completePosSale({
-        items: cart.map((item) => ({ productId: item.id, quantity: item.cartQty })),
-        patientName,
-        doctorName,
-        prescriptionKey,
-      });
-      if (!result.ok || !("receiptId" in result) || !("total" in result)) {
-        setError(result.error ?? "Sale could not be completed.");
-        return;
-      }
-      setReceipt(`Receipt ${result.receiptId.slice(0, 8)} · ₹${Number(result.total).toFixed(2)}`);
-      setCart([]);
-      setPatientName("");
-      setDoctorName("");
-      setPrescriptionFile(null);
-    } catch {
-      setError("Sale could not be completed. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (receipt) {
-    return (
-      <div className="card p-10 text-center">
-        <div className="mb-3 text-5xl">✅</div>
-        <h3 className="text-xl font-bold text-emerald-700">Sale recorded</h3>
-        <p className="mt-2 text-sm text-slate-600">{receipt}</p>
-        <button onClick={() => setReceipt(null)} className="mt-4 rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700">New sale</button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-4 lg:grid-cols-5">
-      <div className="card p-4 lg:col-span-3">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-          {merchantType === "MEDICAL" ? "Dispense medicine" : "Add items to bill"}
-        </h3>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, brand, or barcode…"
-          className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-        />
-        <div className="mt-3 grid max-h-[500px] grid-cols-2 gap-2 overflow-auto pr-1 md:grid-cols-3">
-          {filtered.slice(0, 30).map((p) => (
-            <button
-              key={p.id}
-              onClick={() => addToCart(p)}
-              disabled={p.quantity < 1}
-              className="rounded-lg border border-slate-200 bg-white p-2 text-left hover:border-indigo-400 hover:bg-indigo-50/40 disabled:opacity-40"
-            >
-              <div className="truncate text-xs font-semibold text-slate-900">{p.name}</div>
-              <div className="text-[10px] text-slate-500">{p.brand}</div>
-              <div className="mt-1 flex items-center justify-between text-[11px]">
-                <span className="font-bold text-emerald-700">₹{parseFloat(String(p.mrp)).toFixed(0)}</span>
-                <span className={`font-mono ${p.quantity < 5 ? "text-rose-600" : "text-slate-500"}`}>
-                  ×{p.quantity}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="card flex flex-col p-4 lg:col-span-2">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">Current bill</h3>
-        <div className="mt-2 flex-1 space-y-1 overflow-auto">
-          {cart.length === 0 && <div className="py-6 text-center text-xs text-slate-500">Cart is empty</div>}
-          {cart.map((c) => (
-            <div key={c.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-2 text-xs">
-              <div className="flex-1">
-                <div className="font-semibold text-slate-900 truncate">{c.name}</div>
-                <div className="text-[10px] text-slate-500">₹{parseFloat(String(c.mrp)).toFixed(0)} × {c.cartQty}</div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button onClick={() => updateQty(c.id, c.cartQty - 1)} className="h-5 w-5 rounded bg-white text-xs">−</button>
-                <span className="w-5 text-center font-mono">{c.cartQty}</span>
-                <button onClick={() => updateQty(c.id, c.cartQty + 1)} className="h-5 w-5 rounded bg-white text-xs">+</button>
-              </div>
-              <div className="ml-2 w-14 text-right font-mono font-bold">₹{(parseFloat(String(c.mrp)) * c.cartQty).toFixed(0)}</div>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
-          <div className="flex justify-between text-slate-600"><span>Subtotal</span><span className="font-mono">₹{subtotal.toFixed(2)}</span></div>
-          <div className="flex justify-between text-slate-600"><span>GST ({taxRatePct}%)</span><span className="font-mono">₹{tax.toFixed(2)}</span></div>
-          <div className="flex justify-between text-base font-bold text-slate-900"><span>Total</span><span className="font-mono">₹{total.toFixed(2)}</span></div>
-        </div>
-        {regulatedItems.length > 0 && (
-          <div className="mt-3 space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <div className="text-xs font-semibold text-amber-900">Prescription details required</div>
-            <input value={patientName} onChange={(event) => setPatientName(event.target.value)} placeholder="Patient name" className="w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs" />
-            <input value={doctorName} onChange={(event) => setDoctorName(event.target.value)} placeholder="Prescribing doctor" className="w-full rounded border border-amber-200 bg-white px-2 py-1.5 text-xs" />
-            <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(event) => setPrescriptionFile(event.target.files?.[0] ?? null)} className="w-full text-xs" />
-          </div>
-        )}
-        {error && <div role="alert" className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
-        <button
-          onClick={checkout}
-          disabled={cart.length === 0 || busy}
-          className="mt-3 rounded-lg bg-emerald-600 py-2.5 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
-        >
-          {busy ? "Recording sale..." : `Record Sale · ₹${total.toFixed(2)}`}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // --------------------------------------------------
 // Notifications

@@ -28,8 +28,18 @@ import {
   consumers,
   consumerFavorites,
   scheduleHLogs,
+  posTabs,
+  posSales,
 } from "@/db/schema";
 import { eq, and, sql, gte, inArray, desc } from "drizzle-orm";
+import type {
+  HeldTab,
+  HeldTabLine,
+  PosPaymentMode,
+  ReceiptDoc,
+  ReceiptLine,
+  RecentSale,
+} from "@/lib/pos-types";
 import {
   getSession,
   setSession,
@@ -47,6 +57,7 @@ import {
   createMerchantForAdminInputSchema,
   createMerchantInputSchema,
   createOrderInputSchema,
+  holdPosTabInputSchema,
   posSaleInputSchema,
   updateProductDetailsInputSchema,
 } from "@/lib/validation";
@@ -394,34 +405,175 @@ export async function updateStock(productId: string, newQty: number) {
   return { ok: true };
 }
 
+type ProductRow = typeof products.$inferSelect;
+type PosSaleRow = typeof posSales.$inferSelect;
+type PosTabRow = typeof posTabs.$inferSelect;
+type MerchantRow = typeof merchants.$inferSelect;
+
+/** Short, typeable reference printed on a receipt or shown on a held tab. */
+function generateRef(prefix: string): string {
+  return `${prefix}-${randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** jsonb is untyped at the boundary, so normalize defensively before printing. */
+function asReceiptLines(value: unknown): ReceiptLine[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const line = entry as Partial<ReceiptLine>;
+    if (typeof line.productId !== "string" || typeof line.name !== "string") return [];
+    const quantity = Number(line.quantity);
+    const unitPrice = Number(line.unitPrice);
+    if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice)) return [];
+    return [{
+      productId: line.productId,
+      name: line.name,
+      brand: typeof line.brand === "string" ? line.brand : null,
+      quantity,
+      unitPrice,
+      lineTotal: Number.isFinite(Number(line.lineTotal)) ? Number(line.lineTotal) : round2(unitPrice * quantity),
+      batchNumber: typeof line.batchNumber === "string" ? line.batchNumber : null,
+      expiryDate: typeof line.expiryDate === "string" ? line.expiryDate : null,
+      scheduleClass: typeof line.scheduleClass === "string" ? line.scheduleClass : null,
+    }];
+  });
+}
+
+function asHeldTabLines(value: unknown): HeldTabLine[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") return [];
+    const line = entry as Partial<HeldTabLine>;
+    if (typeof line.productId !== "string" || typeof line.name !== "string") return [];
+    const quantity = Number(line.quantity);
+    const unitPrice = Number(line.unitPrice);
+    if (!Number.isFinite(quantity) || !Number.isFinite(unitPrice)) return [];
+    return {
+      productId: line.productId,
+      name: line.name,
+      brand: typeof line.brand === "string" ? line.brand : null,
+      quantity,
+      unitPrice,
+    };
+  });
+}
+
+function isPosPaymentMode(value: unknown): value is PosPaymentMode {
+  return value === "CASH" || value === "UPI" || value === "CARD" || value === "CREDIT";
+}
+
+function buildReceipt(row: PosSaleRow, merchant: MerchantRow, gstNumber?: string | null): ReceiptDoc {
+  return {
+    receiptId: row.id,
+    refNumber: row.refNumber,
+    storeName: merchant.name,
+    storeCity: merchant.city,
+    storePhone: merchant.phone,
+    gstNumber: gstNumber ?? merchant.licenseNumber,
+    merchantType: merchant.type,
+    currency: row.currency,
+    createdAt: row.createdAt.toISOString(),
+    cashierName: row.cashierName,
+    paymentMode: isPosPaymentMode(row.paymentMode) ? row.paymentMode : "CASH",
+    paymentRef: row.paymentRef,
+    customerName: row.customerName,
+    customerPhone: row.customerPhone,
+    patientName: row.patientName,
+    doctorName: row.doctorName,
+    taxRatePct: Number(row.taxRatePct),
+    subtotal: Number(row.subtotal),
+    taxAmount: Number(row.taxAmount),
+    total: Number(row.total),
+    itemCount: row.itemCount,
+    queuedOffline: row.queuedOffline,
+    lines: asReceiptLines(row.items),
+  };
+}
+
+function buildHeldTab(row: PosTabRow): HeldTab {
+  return {
+    id: row.id,
+    refNumber: row.refNumber,
+    customerName: row.customerName,
+    customerPhone: row.customerPhone,
+    note: row.note,
+    lines: asHeldTabLines(row.items),
+    itemCount: row.itemCount,
+    estimatedTotal: Number(row.estimatedTotal),
+    status: row.status,
+    heldByName: row.heldByName,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
 export async function completePosSale(data: {
   items: Array<{ productId: string; quantity: number }>;
   patientName?: string;
   doctorName?: string;
   prescriptionKey?: string;
+  paymentMode?: PosPaymentMode;
+  paymentRef?: string;
+  customerName?: string;
+  customerPhone?: string;
+  heldTabId?: string;
+  idempotencyKey?: string;
+  queuedOffline?: boolean;
 }) {
   const parsed = posSaleInputSchema.safeParse(data);
-  if (!parsed.success) return { ok: false, error: "The bill contains invalid items or details." };
+  if (!parsed.success) return { ok: false as const, error: "The bill contains invalid items or details." };
   data = parsed.data;
 
   const session = requireRole(await getSession(), ["VENDOR_OWNER", "VENDOR_CLERK"]);
-  if (!session.merchantId) return { ok: false, error: "No store is attached to this account." };
+  if (!session.merchantId) return { ok: false as const, error: "No store is attached to this account." };
   if (session.role === "VENDOR_CLERK" && session.accessLevel === "SCAN_ONLY") {
-    return { ok: false, error: "Your staff account is scan-only." };
+    return { ok: false as const, error: "Your staff account is scan-only." };
   }
   if (!data.items.length || data.items.length > 100) {
-    return { ok: false, error: "Add at least one item to the bill." };
+    return { ok: false as const, error: "Add at least one item to the bill." };
   }
   const productIds = data.items.map((item) => item.productId);
   if (new Set(productIds).size !== productIds.length || data.items.some((item) => !Number.isSafeInteger(item.quantity) || item.quantity < 1)) {
-    return { ok: false, error: "The bill contains invalid items or quantities." };
+    return { ok: false as const, error: "The bill contains invalid items or quantities." };
   }
 
+  const merchantId = session.merchantId;
+  const idempotencyKey = data.idempotencyKey?.trim();
+
   try {
-    const receiptId = randomUUID();
-    const sale = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
+      const [merchant] = await tx.select().from(merchants).where(eq(merchants.id, merchantId)).limit(1);
+      if (!merchant) throw new Error("No store is attached to this account.");
+
+      const [settings] = await tx.select({
+        taxRatePct: storeSettings.taxRatePct,
+        currency: storeSettings.currency,
+        gstNumber: storeSettings.gstNumber,
+      }).from(storeSettings).where(eq(storeSettings.merchantId, merchantId)).limit(1);
+
+      // Offline-queued bills are replayed when connectivity returns, sometimes more than
+      // once (retry after a dropped response, two tabs, a queued sync firing twice).
+      // A transaction-scoped advisory lock on the key serializes those replays so stock
+      // is only ever decremented once; the lock releases automatically on commit.
+      if (idempotencyKey) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${idempotencyKey})::bigint)`);
+        const [existing] = await tx
+          .select()
+          .from(posSales)
+          .where(and(eq(posSales.merchantId, merchantId), eq(posSales.idempotencyKey, idempotencyKey)))
+          .limit(1);
+        if (existing) {
+          return { duplicate: true as const, receipt: buildReceipt(existing, merchant, settings?.gstNumber) };
+        }
+      }
+
+      const receiptId = randomUUID();
       const storedProducts = await tx.select().from(products).where(
-        and(inArray(products.id, productIds), eq(products.merchantId, session.merchantId!))
+        and(inArray(products.id, productIds), eq(products.merchantId, merchantId))
       );
       if (storedProducts.length !== productIds.length) throw new Error("One or more items do not belong to this store.");
 
@@ -445,18 +597,19 @@ export async function completePosSale(data: {
         }
       }
 
-      const [settings] = await tx.select({ taxRatePct: storeSettings.taxRatePct }).from(storeSettings)
-        .where(eq(storeSettings.merchantId, session.merchantId!)).limit(1);
-      const subtotal = lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0);
+      const subtotal = round2(lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0));
       const taxRatePct = Number(settings?.taxRatePct ?? "5");
-      const tax = subtotal * taxRatePct / 100;
+      const tax = round2(subtotal * taxRatePct / 100);
+      const total = round2(subtotal + tax);
+      const currency = settings?.currency ?? "INR";
+      const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0);
 
       for (const line of lines) {
         const updated = await tx.update(products)
           .set({ quantity: sql`${products.quantity} - ${line.quantity}`, updatedAt: new Date() })
           .where(and(
             eq(products.id, line.product.id),
-            eq(products.merchantId, session.merchantId!),
+            eq(products.merchantId, merchantId),
             gte(products.quantity, line.quantity)
           ))
           .returning({ id: products.id });
@@ -465,7 +618,7 @@ export async function completePosSale(data: {
         const transactionId = randomUUID();
         await tx.insert(transactions).values({
           id: transactionId,
-          merchantId: session.merchantId!,
+          merchantId,
           productId: line.product.id,
           quantity: line.quantity,
           unitPrice: line.unitPrice.toFixed(2),
@@ -476,7 +629,7 @@ export async function completePosSale(data: {
         if (regulatedLines.some((regulated) => regulated.product.id === line.product.id)) {
           await tx.insert(scheduleHLogs).values({
             id: randomUUID(),
-            merchantId: session.merchantId!,
+            merchantId,
             productId: line.product.id,
             transactionId,
             patientName: data.patientName!.trim(),
@@ -487,22 +640,314 @@ export async function completePosSale(data: {
         }
       }
 
+      const receiptLines: ReceiptLine[] = lines.map(({ product, quantity, unitPrice }) => ({
+        productId: product.id,
+        name: product.name,
+        brand: product.brand,
+        quantity,
+        unitPrice,
+        lineTotal: round2(unitPrice * quantity),
+        batchNumber: product.batchNumber,
+        expiryDate: product.expiryDate ? product.expiryDate.toISOString() : null,
+        scheduleClass: product.scheduleClass,
+      }));
+
+      const saleRow: PosSaleRow = {
+        id: receiptId,
+        merchantId,
+        refNumber: generateRef("R"),
+        idempotencyKey: idempotencyKey ?? null,
+        items: receiptLines,
+        itemCount,
+        subtotal: subtotal.toFixed(2),
+        taxRatePct: taxRatePct.toFixed(2),
+        taxAmount: tax.toFixed(2),
+        total: total.toFixed(2),
+        currency,
+        paymentMode: data.paymentMode ?? "CASH",
+        paymentRef: data.paymentRef?.trim() || null,
+        customerName: data.customerName?.trim() || null,
+        customerPhone: data.customerPhone?.trim() || null,
+        patientName: data.patientName?.trim() || null,
+        doctorName: data.doctorName?.trim() || null,
+        prescriptionKey: data.prescriptionKey ?? null,
+        posTabId: data.heldTabId ?? null,
+        cashierId: session.id,
+        cashierName: session.name,
+        queuedOffline: data.queuedOffline === true,
+        createdAt: new Date(),
+      };
+      await tx.insert(posSales).values(saleRow);
+
+      // A held tab that this bill completes is closed out rather than deleted, so the
+      // audit trail shows what was parked and by whom.
+      let completedTabRef: string | null = null;
+      if (data.heldTabId) {
+        const [closed] = await tx.update(posTabs)
+          .set({ status: "COMPLETED", completedSaleId: receiptId, updatedAt: new Date() })
+          .where(and(
+            eq(posTabs.id, data.heldTabId),
+            eq(posTabs.merchantId, merchantId),
+            eq(posTabs.status, "HELD")
+          ))
+          .returning({ refNumber: posTabs.refNumber });
+        completedTabRef = closed?.refNumber ?? null;
+      }
+
       await tx.insert(activityFeed).values({
         id: randomUUID(),
-        merchantId: session.merchantId!,
+        merchantId,
         actorName: session.name,
         action: "POS_SALE",
-        target: `${lines.length} products · ₹${(subtotal + tax).toFixed(2)}`,
+        target: `${saleRow.refNumber} · ${lines.length} products · ₹${total.toFixed(2)}${completedTabRef ? ` · closed tab ${completedTabRef}` : ""}${saleRow.queuedOffline ? " · synced from offline queue" : ""}`,
       });
 
-      return { subtotal, tax, total: subtotal + tax, taxRatePct };
+      return { duplicate: false as const, receipt: buildReceipt(saleRow, merchant, settings?.gstNumber) };
     });
 
     revalidatePath("/vendor");
-    return { ok: true, receiptId, ...sale };
+    return {
+      ok: true as const,
+      receiptId: outcome.receipt.receiptId,
+      refNumber: outcome.receipt.refNumber,
+      duplicate: outcome.duplicate,
+      receipt: outcome.receipt,
+      subtotal: outcome.receipt.subtotal,
+      tax: outcome.receipt.taxAmount,
+      total: outcome.receipt.total,
+      taxRatePct: outcome.receipt.taxRatePct,
+    };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Could not complete this sale." };
+    return { ok: false as const, error: error instanceof Error ? error.message : "Could not complete this sale." };
   }
+}
+
+/**
+ * Parks the current bill so the clerk can serve the next customer.
+ *
+ * Stock is deliberately NOT reserved while a tab is held: two parked bills can both
+ * contain the last strip of a medicine, and the atomic decrement in completePosSale
+ * decides the winner at checkout. The UI says so, and resume re-checks quantities.
+ */
+export async function holdPosTab(data: {
+  items: Array<{ productId: string; quantity: number }>;
+  customerName?: string;
+  customerPhone?: string;
+  note?: string;
+}) {
+  const parsed = holdPosTabInputSchema.safeParse(data);
+  if (!parsed.success) return { ok: false as const, error: "That bill could not be put on hold." };
+  const items = parsed.data.items;
+
+  const session = requireRole(await getSession(), ["VENDOR_OWNER", "VENDOR_CLERK"]);
+  if (!session.merchantId) return { ok: false as const, error: "No store is attached to this account." };
+  if (session.role === "VENDOR_CLERK" && session.accessLevel === "SCAN_ONLY") {
+    return { ok: false as const, error: "Your staff account is scan-only." };
+  }
+
+  const merchantId = session.merchantId;
+  const productIds = items.map((item) => item.productId);
+  if (new Set(productIds).size !== productIds.length) {
+    return { ok: false as const, error: "That bill contains a repeated item." };
+  }
+
+  try {
+    const tab = await db.transaction(async (tx) => {
+      const storedProducts = await tx
+        .select()
+        .from(products)
+        .where(and(inArray(products.id, productIds), eq(products.merchantId, merchantId)));
+      if (storedProducts.length !== productIds.length) {
+        throw new Error("One or more items do not belong to this store.");
+      }
+
+      const [settings] = await tx
+        .select({ taxRatePct: storeSettings.taxRatePct })
+        .from(storeSettings)
+        .where(eq(storeSettings.merchantId, merchantId))
+        .limit(1);
+      const taxRatePct = Number(settings?.taxRatePct ?? "5");
+
+      const productById = new Map(storedProducts.map((product) => [product.id, product]));
+      const lines: HeldTabLine[] = items.map((item) => {
+        const product = productById.get(item.productId) as ProductRow;
+        return {
+          productId: product.id,
+          name: product.name,
+          brand: product.brand,
+          quantity: item.quantity,
+          unitPrice: Number(product.mrp),
+        };
+      });
+      const subtotal = round2(lines.reduce((sum, line) => sum + line.unitPrice * line.quantity, 0));
+      const estimatedTotal = round2(subtotal + subtotal * taxRatePct / 100);
+
+      const row: PosTabRow = {
+        id: randomUUID(),
+        merchantId,
+        refNumber: generateRef("TAB"),
+        customerName: parsed.data.customerName?.trim() || null,
+        customerPhone: parsed.data.customerPhone?.trim() || null,
+        note: parsed.data.note?.trim() || null,
+        items: lines,
+        itemCount: lines.reduce((sum, line) => sum + line.quantity, 0),
+        estimatedTotal: estimatedTotal.toFixed(2),
+        status: "HELD",
+        heldBy: session.id,
+        heldByName: session.name,
+        completedSaleId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      await tx.insert(posTabs).values(row);
+
+      await tx.insert(activityFeed).values({
+        id: randomUUID(),
+        merchantId,
+        actorName: session.name,
+        action: "POS_TAB_HELD",
+        target: `${row.refNumber} · ${lines.length} products · ₹${estimatedTotal.toFixed(2)}`,
+      });
+
+      return buildHeldTab(row);
+    });
+
+    revalidatePath("/vendor");
+    return { ok: true as const, tab };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "That bill could not be put on hold." };
+  }
+}
+
+export async function listMyHeldTabs() {
+  const session = await getSession();
+  const s = requireRole(session, ["VENDOR_OWNER", "VENDOR_CLERK"]);
+  if (!s.merchantId) return [] as HeldTab[];
+  const rows = await db
+    .select()
+    .from(posTabs)
+    .where(and(eq(posTabs.merchantId, s.merchantId), eq(posTabs.status, "HELD")))
+    .orderBy(desc(posTabs.createdAt))
+    .limit(50);
+  return rows.map(buildHeldTab);
+}
+
+/**
+ * Voids a parked bill. Owners can void any tab in their store; a clerk can only void
+ * one they parked themselves, so a colleague's bill cannot be silently dropped.
+ */
+export async function voidPosTab(tabId: string) {
+  const session = requireRole(await getSession(), ["VENDOR_OWNER", "VENDOR_CLERK"]);
+  if (!session.merchantId) return { ok: false as const, error: "No store is attached to this account." };
+  if (typeof tabId !== "string" || !tabId.trim()) {
+    return { ok: false as const, error: "That held bill no longer exists." };
+  }
+
+  const merchantId = session.merchantId;
+  const trimmedId = tabId.trim();
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [tab] = await tx
+        .select()
+        .from(posTabs)
+        .where(and(eq(posTabs.id, trimmedId), eq(posTabs.merchantId, merchantId)))
+        .limit(1);
+      if (!tab) throw new Error("That held bill no longer exists.");
+      if (tab.status !== "HELD") throw new Error("That bill has already been closed.");
+      if (session.role !== "VENDOR_OWNER" && tab.heldBy !== session.id) {
+        throw new Error("Only the clerk who parked this bill, or the owner, can void it.");
+      }
+
+      await tx.update(posTabs)
+        .set({ status: "VOIDED", updatedAt: new Date() })
+        .where(eq(posTabs.id, tab.id));
+
+      await tx.insert(activityFeed).values({
+        id: randomUUID(),
+        merchantId,
+        actorName: session.name,
+        action: "POS_TAB_VOIDED",
+        target: `${tab.refNumber} · ₹${Number(tab.estimatedTotal).toFixed(2)}`,
+      });
+
+      return tab.refNumber;
+    });
+
+    revalidatePath("/vendor");
+    return { ok: true as const, refNumber: result };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "That bill could not be voided." };
+  }
+}
+
+/**
+ * The two numbers the counter needs to price a bill: tax rate and currency.
+ *
+ * Deliberately narrower than getMyStoreSettings(), which is owner-only and also carries
+ * GST, opening hours, and delivery details a billing clerk has no use for. Before this
+ * existed, clerks silently billed at a hardcoded 5% because they never received the
+ * store's real rate.
+ */
+export async function getMyBillingConfig() {
+  const session = await getSession();
+  const s = requireRole(session, ["VENDOR_OWNER", "VENDOR_CLERK"]);
+  if (!s.merchantId) return { taxRatePct: 5, currency: "INR" };
+  const [row] = await db
+    .select({ taxRatePct: storeSettings.taxRatePct, currency: storeSettings.currency })
+    .from(storeSettings)
+    .where(eq(storeSettings.merchantId, s.merchantId))
+    .limit(1);
+  const taxRatePct = Number(row?.taxRatePct ?? "5");
+  return {
+    taxRatePct: Number.isFinite(taxRatePct) && taxRatePct >= 0 ? taxRatePct : 5,
+    currency: row?.currency?.trim() || "INR",
+  };
+}
+
+export async function listMyRecentSales(limit = 15) {
+  const session = await getSession();
+  const s = requireRole(session, ["VENDOR_OWNER", "VENDOR_CLERK"]);
+  if (!s.merchantId) return [] as RecentSale[];
+  const rows = await db
+    .select()
+    .from(posSales)
+    .where(eq(posSales.merchantId, s.merchantId))
+    .orderBy(desc(posSales.createdAt))
+    .limit(Math.min(Math.max(Number(limit) || 15, 1), 50));
+  return rows.map((row) => ({
+    receiptId: row.id,
+    refNumber: row.refNumber,
+    createdAt: row.createdAt.toISOString(),
+    cashierName: row.cashierName,
+    itemCount: row.itemCount,
+    total: Number(row.total),
+    paymentMode: isPosPaymentMode(row.paymentMode) ? row.paymentMode : "CASH",
+    queuedOffline: row.queuedOffline,
+    customerName: row.customerName,
+  }));
+}
+
+/** Reprints a receipt exactly as it was issued, from the stored price snapshot. */
+export async function getMyReceipt(receiptId: string) {
+  const session = await getSession();
+  const s = requireRole(session, ["VENDOR_OWNER", "VENDOR_CLERK"]);
+  if (!s.merchantId || typeof receiptId !== "string" || !receiptId.trim()) return null;
+
+  const [row] = await db
+    .select()
+    .from(posSales)
+    .where(and(eq(posSales.id, receiptId.trim()), eq(posSales.merchantId, s.merchantId)))
+    .limit(1);
+  if (!row) return null;
+
+  const [merchant] = await db.select().from(merchants).where(eq(merchants.id, s.merchantId)).limit(1);
+  if (!merchant) return null;
+  const [settings] = await db
+    .select({ gstNumber: storeSettings.gstNumber })
+    .from(storeSettings)
+    .where(eq(storeSettings.merchantId, s.merchantId))
+    .limit(1);
+  return buildReceipt(row, merchant, settings?.gstNumber);
 }
 
 export async function scanBarcode(barcode: string) {
